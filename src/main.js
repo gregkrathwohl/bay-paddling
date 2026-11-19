@@ -79,7 +79,28 @@ const contourTiles = (mode) => demSource.contourProtocolUrl({
 // The editor (dev server only) autosaves there, so a refresh, the Preview tab and the published
 // site all show exactly what was saved. ?preview renders the published view.
 const PREVIEW = new URLSearchParams(location.search).has('preview');
+// the viewer's settings live in the page address, so any view can be shared or used as a screensaver:
+//   ?style=dark  &buoys=0  &streaks=0.7  &rate=live|0.1|0.33|1  &play  &screensaver   (+ #zoom/lat/lng)
+const Q = new URLSearchParams(location.search);
+const view = {
+  theme: Q.get('style') === 'dark' ? 'dark' : 'light', buoys: Q.get('buoys') !== '0',
+  streaks: Q.has('streaks') ? +Q.get('streaks') : null, rate: Q.get('rate') || '0.33',
+  play: Q.has('play'), screensaver: Q.has('screensaver'),
+};
+const writeView = () => {
+  const q = new URLSearchParams(location.search);
+  const set = (k, v, def) => (v === def || v == null ? q.delete(k) : q.set(k, v));
+  set('style', view.theme, 'light'); set('buoys', view.buoys ? null : '0'); set('rate', view.rate, '0.33');
+  set('streaks', view.streaks == null ? null : String(view.streaks));
+  view.play ? q.set('play', '') : q.delete('play');
+  view.screensaver ? q.set('screensaver', '') : q.delete('screensaver');
+  history.replaceState(history.state, '', `${location.pathname}?${q.toString().replace(/=(&|$)/g, '$1')}${location.hash}`);
+  window.dispatchEvent(new Event('viewchange'));
+};
+if (view.screensaver) document.body.classList.add('screensaver');
+document.body.classList.toggle('theme-dark', view.theme === 'dark');
 if (PREVIEW) document.body.setAttribute('data-public', '');
+if (view.screensaver) document.body.setAttribute('data-public', '');
 const PUBLIC = document.body.hasAttribute('data-public');
 const EDITOR = !PUBLIC;
 const SAVED_KEYS = ['mode', 'hillshade', 'waterMode', 'waterShade', 'currents'];
@@ -104,7 +125,7 @@ const handNamesOf = () => labels.flatMap(l => [l.text.replace(/\n/g, ' '), ...(l
 let handNames = handNamesOf();
 const style = () => buildBayStyle({ osm, mask, currents, routes, aton, coastLines,
   ripples, trips: state.trip, waterMode: state.waterMode, waterShade: prefs.waterShade,
-  contourTiles: contourTiles(state.mode), mode: state.mode, designZoom, hillshade: state.hillshade, handNames,
+  contourTiles: contourTiles(state.mode), mode: state.mode, designZoom, hillshade: state.hillshade, handNames, theme: view.theme,
   landTiles: cfg.style === 'bay-tiles' });
 
 // the editor sidebar is open by default in dev; collapsing it is a per-browser convenience
@@ -396,29 +417,70 @@ if (flowData) {
     });
     box.addEventListener('pointerleave', () => { hover.hidden = true; });
   }
-  // --- play the tides: the time slider runs on its own (hours per second), looping at the end
+  // --- play the tides: the time runs on its own (hours per second, looping), or "live" = follows the clock
   {
     const btn = $('flow-play'), rateSel = $('flow-rate'), last = flowData.times.length - 1;
-    let raf = 0, prev = 0;
+    const T0 = Date.parse(flowData.times[0]), H = 3600e3;
+    let raf = 0, prev = 0, lastLive = 0;
     const tick = (ts) => {
-      const dt = prev ? Math.min(0.1, (ts - prev) / 1000) : 0; prev = ts;
-      let t = flow.t + dt * +rateSel.value;
-      if (t > last) t = 0;
-      slider.value = t; flow.setTime(t); syncNow();
+      if (rateSel.value === 'live') {
+        if (ts - lastLive > 1000) { lastLive = ts; const t = Math.max(0, Math.min(last, (Date.now() - T0) / H)); slider.value = t; flow.setTime(t); syncNow(); }
+      } else {
+        const dt = prev ? Math.min(0.1, (ts - prev) / 1000) : 0; prev = ts;
+        let t = flow.t + dt * +rateSel.value;
+        if (t > last) t = 0;
+        slider.value = t; flow.setTime(t); syncNow();
+      }
       raf = requestAnimationFrame(tick);
     };
-    const play = (on) => { btn.classList.toggle('on', on); btn.title = on ? 'Pause' : 'Play the tides'; cancelAnimationFrame(raf); prev = 0; if (on) raf = requestAnimationFrame(tick); };
+    const play = (on, save = true) => {
+      btn.classList.toggle('on', on); btn.title = on ? 'Pause' : 'Play the tides';
+      cancelAnimationFrame(raf); prev = 0; lastLive = 0; if (on) raf = requestAnimationFrame(tick);
+      if (save) { view.play = on; writeView(); }
+    };
+    rateSel.value = [...rateSel.options].some(o => o.value === view.rate) ? view.rate : '0.33';
+    rateSel.addEventListener('change', () => { view.rate = rateSel.value; writeView(); if (view.rate === 'live') play(true); });
     btn.addEventListener('click', () => play(!btn.classList.contains('on')));
     slider.addEventListener('pointerdown', () => play(false));
     $('flow-tide')?.addEventListener('pointerdown', () => play(false));
     nowBtn.addEventListener('click', () => play(false));
+    if (view.play) play(true, false);
   }
-  // --- the viewer's one knob: more / fewer streaks (remembered per browser)
+  // --- settings: streaks, map style, buoys (all in the page address)
   {
     const el = $('flow-strength'), key = 'bay-paddling:strength';
-    const v0 = (() => { try { return +(localStorage.getItem(key) ?? 0.5); } catch { return 0.5; } })();
+    const v0 = view.streaks ?? (() => { try { return +(localStorage.getItem(key) ?? 0.5); } catch { return 0.5; } })();
     el.value = v0; flow.setStrength(v0);
-    el.addEventListener('input', () => { flow.setStrength(+el.value); try { localStorage.setItem(key, el.value); } catch {} });
+    el.addEventListener('input', () => { flow.setStrength(+el.value); view.streaks = +el.value; writeView(); try { localStorage.setItem(key, el.value); } catch {} });
+    const theme = $('set-theme'), buoys = $('set-buoys');
+    theme.value = view.theme; buoys.checked = view.buoys;
+    theme.addEventListener('change', () => { view.theme = theme.value; document.body.classList.toggle('theme-dark', view.theme === 'dark'); writeView(); restyle(); });
+    const showBuoys = () => { for (const id of ['buoy', 'beacon', 'aton-label']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', view.buoys ? 'visible' : 'none'); };
+    buoys.addEventListener('change', () => { view.buoys = buoys.checked; writeView(); showBuoys(); });
+    map.on('style.load', showBuoys); showBuoys();
+    // popover + the link it shows
+    const pop = $('flow-pop'), gear = $('flow-settings'), link = $('ss-link');
+    const ssLink = () => {
+      const q = new URLSearchParams(location.search); q.delete('preview'); q.set('screensaver', '');
+      return `${location.origin}${location.pathname}?${q.toString().replace(/=(&|$)/g, '$1')}${location.hash}`;
+    };
+    const syncLink = () => { link.value = ssLink(); };
+    addEventListener('viewchange', syncLink); map.on('moveend', syncLink); syncLink();
+    gear.addEventListener('click', () => { pop.hidden = !pop.hidden; gear.setAttribute('aria-expanded', String(!pop.hidden)); syncLink(); });
+    $('ss-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(ssLink()); $('ss-copy').textContent = 'Copied ✓'; } catch { link.select(); } });
+    // full screen = the screensaver view, until Esc
+    $('flow-full').addEventListener('click', async () => {
+      view.screensaver = true; document.body.classList.add('screensaver'); writeView(); pop.hidden = true;
+      try { await document.documentElement.requestFullscreen(); } catch {}
+    });
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && view.screensaver && !Q.has('screensaver')) { view.screensaver = false; document.body.classList.remove('screensaver'); writeView(); }
+    });
+    // screensaver caption: the time and tide, quietly
+    const cap = $('ss-caption'), prevOnTime = flow.onTime;
+    const credit = '<span class="ss-src">Currents NOAA SFBOFS · Map © OpenStreetMap contributors, OpenFreeMap</span>';
+    flow.onTime = (t) => { prevOnTime(t); cap.innerHTML = label.innerHTML + credit; };
+    cap.innerHTML = label.innerHTML + credit;
   }
   const show = (on) => { onBox.checked = on; $('flow-panel').hidden = !on; flow.setVisible(on); };
   onBox.addEventListener('change', () => { show(onBox.checked); savePrefs({ currents: onBox.checked }); });

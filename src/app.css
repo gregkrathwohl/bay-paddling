@@ -288,8 +288,36 @@ body.ed-float.editor-open .maplibregl-ctrl-bottom-right { right: calc(var(--ed-c
 .flow-play { width: 32px; height: 32px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center; flex: none; color: #3a6f97 !important; }
 .flow-play .i-pause, .flow-play.on .i-play { display: none; }
 .flow-play.on .i-pause { display: block; }
-.flow-rate { font: 500 12px var(--sans); border: 1px solid #cfd6db; border-radius: 7px; padding: 3px 4px; background: #fff; color: #222; }
-.flow-strength { display: grid; gap: 1px; font-size: 10.5px; color: #8a949c; }
-.flow-panel .flow-strength input[type=range] { width: 64px; height: 14px; }
-.flow-track { min-width: 260px; }
-@media (max-width: 700px) { .flow-rate, .flow-strength { display: none; } }
+.flow-track { min-width: 220px; }
+.flow-icon { width: 30px; height: 30px; padding: 0 !important; display: grid; place-items: center; flex: none; color: #45525c !important; }
+.flow-icon[aria-expanded="true"] { background: #eef2f5 !important; }
+/* settings popover, above the time panel's right end */
+.flow-pop { position: absolute; right: 8px; bottom: calc(100% + 8px); width: 270px; background: #fff; border-radius: 12px; padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.14); display: grid; gap: 10px; font-size: 12.5px; color: #222; }
+.flow-pop[hidden] { display: none; }
+.flow-pop label { display: grid; gap: 4px; }
+.flow-pop .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.flow-pop select { font: 500 12px var(--sans); border: 1px solid #cfd6db; border-radius: 7px; padding: 3px 4px; background: #fff; color: #222; }
+.flow-panel .flow-pop input[type=range] { width: 100%; height: 16px; position: static; opacity: 1; pointer-events: auto; }
+.flow-pop .pop-link { border-top: 1px solid #eef0f2; padding-top: 10px; display: grid; gap: 6px; }
+.flow-pop .pop-link small { color: #6f7b84; line-height: 1.35; }
+.flow-pop .pop-link input { flex: 1; min-width: 0; font: 11px ui-monospace, Menlo, monospace; border: 1px solid #d9dee2; border-radius: 6px; padding: 4px 6px; color: #45525c; }
+
+/* screensaver: just the map, the streaks and a quiet caption */
+body.screensaver .title-panel, body.screensaver .key, body.screensaver .flow-panel, body.screensaver .routes-card,
+body.screensaver .maplibregl-ctrl-bottom-right, body.screensaver .editor, body.screensaver .ed-open, body.screensaver .tuner { display: none !important; }
+body.screensaver { cursor: none; }
+.ss-caption { display: none; }
+body.screensaver .ss-caption { display: block; position: absolute; left: 28px; bottom: 24px; z-index: 3; font: 13px/1.35 var(--sans);
+  color: rgba(31,40,48,0.75); text-shadow: 0 0 6px rgba(255,255,255,0.8); pointer-events: none; }
+.ss-caption b { font: 600 15px var(--sans); display: block; }
+.ss-caption small { font-size: 12px; }
+
+/* dark map: the floating panels follow */
+body.theme-dark .flow-panel, body.theme-dark .flow-pop, body.theme-dark .routes-card { background: rgba(24,30,36,0.94); color: #e3e6e8; }
+body.theme-dark .flow-panel button, body.theme-dark .flow-pop select, body.theme-dark .flow-pop .pop-link input { background: #232b32; color: #e3e6e8 !important; border-color: #3a454e; }
+body.theme-dark .flow-panel button:disabled { color: #5f6b74 !important; border-color: #2c353c; }
+body.theme-dark .flow-when small, body.theme-dark .flow-ticks span, body.theme-dark .flow-tide .lbl, body.theme-dark .flow-pop .pop-link small { color: #93a0a9; }
+body.theme-dark .title-panel, body.theme-dark .key { filter: invert(0.88) hue-rotate(180deg); }
+body.theme-dark.screensaver .ss-caption { color: rgba(225,232,238,0.8); text-shadow: 0 0 6px rgba(0,0,0,0.8); }
+.ss-caption .ss-src { display: block; margin-top: 6px; font-size: 10px; opacity: 0.7; }

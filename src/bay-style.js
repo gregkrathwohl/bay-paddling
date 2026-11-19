@@ -22,7 +22,14 @@ export const bayPalette = {
   outside: '#ece9e1',
 };
 
-export function buildBayStyle({ c = bayPalette, osm, mask, currents, routes, aton, coastLines, ripples, trips, waterMode = 'ripples', waterShade = 0.1, contourTiles, mode = 'web', designZoom = 13.6, hillshade = false, handNames = [], landTiles = false }) {
+// dark: the water reads as deep night blue, the land steps right back, streaks glow
+export const darkPalette = {
+  land: '#1a1f24', park: '#1d2722', water: '#0e2232', coast: '#4d7ea3', waterline: '#3a6b90', isobath: '#2d5876',
+  current: '#7fb6dc', route: '#ff8a8f', road: '#2a3137', roadMajor: '#3a434b', trail: '#5e4447',
+  ink: '#e6e4dc', inkSoft: '#97a2aa', waterInk: '#86b6d8', outside: '#14181c',
+};
+
+export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPalette : bayPalette, osm, mask, currents, routes, aton, coastLines, ripples, trips, waterMode = 'ripples', waterShade = 0.1, contourTiles, mode = 'web', designZoom = 13.6, hillshade = false, handNames = [], landTiles = false }) {
   const paper = mode === 'paper';
   const W = (base, k = null) => {
     const v = (x) => (k ? ['*', k, x] : x);
@@ -193,6 +200,19 @@ export function buildBayStyle({ c = bayPalette, osm, mask, currents, routes, ato
         paint: { 'text-color': c.waterInk, 'text-halo-color': 'rgba(205,228,236,0.8)', 'text-halo-width': 1 } }));
   }
 
+  let out = layers;
+  if (theme === 'dark') {
+    // depth: dark → lighter in the shallows; halos dark; label colours lifted for contrast
+    const depth = out.find(l => l.id === 'depth');
+    if (depth) depth.paint['color-relief-color'] = ['interpolate', ['linear'], ['elevation'],
+      -80, '#06141f', -40, '#0a1c2b', -20, '#0e2535', -8, '#143044', -2, '#1b3a50', -0.3, 'rgba(14,34,50,0)', 0, 'rgba(0,0,0,0)'];
+    const swap = { '#d9c7aa': '#2b3137', '#a3262d': '#f2989c', '#22693a': '#8fd6a6', '#245a40': '#9fdcb6', '#4f95c8': '#02080d' };
+    let j = JSON.stringify(out);
+    for (const [a, b] of Object.entries(swap)) j = j.replaceAll(a, b);
+    out = JSON.parse(j);
+    for (const l of out) for (const k of Object.keys(l.paint || {})) if (k.endsWith('halo-color')) l.paint[k] = 'rgba(10,18,26,0.85)';
+  }
+
   return {
     version: 8,
     glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
@@ -212,7 +232,7 @@ export function buildBayStyle({ c = bayPalette, osm, mask, currents, routes, ato
         encoding: 'terrarium', tileSize: 256, maxzoom: 15 },
       contours: { type: 'vector', tiles: [contourTiles], maxzoom: 15 },
     },
-    layers,
+    layers: out,
   };
 }
 

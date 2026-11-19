@@ -118,10 +118,19 @@
   </div>
   <span id="flow-label" class="flow-when"></span>
   <button id="flow-now" title="Back to the current hour" disabled>Now</button>
-  <select id="flow-rate" class="flow-rate" title="Playback speed" aria-label="Playback speed">
-    <option value="0.1">1 h in 10 s</option><option value="0.33" selected>1 h in 3 s</option><option value="1">1 h a second</option>
-  </select>
-  <label class="flow-strength" title="More or fewer current streaks">Streaks<input type="range" id="flow-strength" min="0" max="1" step="0.01" value="0.5"></label>
+  <button id="flow-settings" class="flow-icon" title="Map settings" aria-label="Map settings" aria-expanded="false">
+    <svg viewBox="0 0 16 16" width="15" height="15"><path d="M2 4h7M12 4h2M2 12h3M8 12h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10.5" cy="4" r="1.7" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="6.5" cy="12" r="1.7" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+  <button id="flow-full" class="flow-icon" title="Full screen (screensaver view)" aria-label="Full screen">
+    <svg viewBox="0 0 16 16" width="15" height="15"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <div class="flow-pop" id="flow-pop" hidden>
+    <label class="row">Map style <select id="set-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+    <label class="row">Playback <select id="flow-rate" aria-label="Playback speed">
+      <option value="live">Live (real time)</option><option value="0.1">1 h in 10 s</option><option value="0.33" selected>1 h in 3 s</option><option value="1">1 h a second</option></select></label>
+    <label>Streaks <input type="range" id="flow-strength" min="0" max="1" step="0.01" value="0.5"></label>
+    <label class="row">Buoys &amp; markers <input type="checkbox" id="set-buoys" role="switch" checked></label>
+    <div class="pop-link"><small>These settings and the map position are in the page address. Add <code>&amp;screensaver</code> for a clean full-screen view:</small>
+      <div class="row"><input id="ss-link" readonly aria-label="Screensaver link"><button id="ss-copy">Copy</button></div></div>
+  </div>
   <button id="flow-tune" class="dev-only">Tune</button>
 </div>
 
@@ -132,6 +141,7 @@
   <pre id="tuner-out" hidden></pre>
 </div>
 
+<div class="ss-caption" id="ss-caption" aria-hidden="true"></div>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

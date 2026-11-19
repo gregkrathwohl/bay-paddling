@@ -175,7 +175,8 @@ export class FlowLayer {
 }
 
 export function timeLabel(data, t) {
-  const i = Math.round(t), d = new Date(data.times[i]);
+  // the exact time between the hourly frames (live mode and playback move smoothly), to 5 minutes
+  const i = Math.round(t), d = new Date(Math.round((Date.parse(data.times[0]) + t * 3600e3) / 300e3) * 300e3);
   const s = d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   return `<b>${s}</b><small>${i < data.nowcast ? 'model nowcast' : 'NOAA forecast'}</small>`;
 }
