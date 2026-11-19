@@ -303,10 +303,10 @@ body.screensaver .title-panel, body.screensaver .key, body.screensaver .flow-pan
 body.screensaver .maplibregl-ctrl-bottom-right, body.screensaver .editor, body.screensaver .ed-open, body.screensaver .tuner { display: none !important; }
 body.screensaver { cursor: none; }
 .ss-caption { display: none; }
-body.screensaver .ss-caption { display: block; position: absolute; left: 28px; bottom: 24px; z-index: 3; font: 13px/1.35 var(--sans);
-  color: rgba(31,40,48,0.75); text-shadow: 0 0 6px rgba(255,255,255,0.8); pointer-events: none; }
-.ss-caption b { font: 600 15px var(--sans); display: block; }
-.ss-caption small { font-size: 12px; }
+body.screensaver .ss-caption { display: block; position: absolute; left: 32px; bottom: 28px; z-index: 3; font: 17px/1.4 var(--sans);
+  color: #1f2a33; text-shadow: 0 0 2px rgba(255,255,255,0.9), 0 0 1px rgba(255,255,255,0.9); pointer-events: none; }
+.ss-caption b { font: 600 24px/1.25 var(--sans); display: block; }
+.ss-caption small { font-size: 17px; }
 
 /* dark map: the floating panels follow */
 body.theme-dark .flow-panel, body.theme-dark .flow-pop, body.theme-dark .routes-card { background: rgba(24,30,36,0.94); color: #e3e6e8; }
@@ -314,8 +314,8 @@ body.theme-dark .flow-panel button, body.theme-dark .flow-pop select, body.theme
 body.theme-dark .flow-panel button:disabled { color: #5f6b74 !important; border-color: #2c353c; }
 body.theme-dark .flow-when small, body.theme-dark .flow-ticks span, body.theme-dark .flow-tide .lbl, body.theme-dark .flow-pop .pop-link small { color: #93a0a9; }
 body.theme-dark .title-panel, body.theme-dark .key { filter: invert(0.88) hue-rotate(180deg); }
-body.theme-dark.screensaver .ss-caption { color: rgba(225,232,238,0.8); text-shadow: 0 0 6px rgba(0,0,0,0.8); }
-.ss-caption .ss-src { display: block; margin-top: 6px; font-size: 10px; opacity: 0.7; }
+body.theme-dark.screensaver .ss-caption { color: #e3e9ee; text-shadow: 0 0 2px rgba(0,0,0,0.9), 0 0 1px rgba(0,0,0,0.9); }
+.ss-caption .ss-src { display: block; margin-top: 8px; font-size: 11px; opacity: 0.6; }
 
 /* crosshair over the map (a hand while dragging), and the readout card that follows it */
 .maplibregl-canvas-container.maplibregl-interactive { cursor: crosshair; }
@@ -351,5 +351,6 @@ body.theme-dark .hover-card { background: rgba(22,28,34,0.94); color: #e3e6e8; }
     max-height: calc(100% - 290px); overflow: auto; }
   body.screensaver .m-menu { display: none; }
 }
-.flow-when .ss-next { display: none; }
-.ss-caption .ss-next { display: block; font-size: 12px; opacity: 0.85; }
+.flow-when .ss-next, .flow-when .ss-where { display: none; }
+.ss-caption .ss-next { display: block; font-size: 17px; }
+.ss-caption .ss-where { display: block; font-size: 14px; opacity: 0.75; }

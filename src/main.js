@@ -399,10 +399,13 @@ if (flowData) {
       if (v != null) cursor.querySelector('i').style.top = `${(Y(v) / 42) * 100}%`;
       const sm = label.querySelector('small');
       if (v != null && sm) { sm.textContent = `Tide ${v.toFixed(1)} ft ${dv > 0 ? '↑' : '↓'}`; sm.title = `${dv > 0 ? 'Rising' : 'Falling'} · NOAA prediction for ${tides.name}, ft above MLLW`; }
-      // the next high and low (shown in the screensaver caption): "High 7:20 PM · Low 1:32 AM"
+      // where we are in the cycle (screensaver caption): the last turn and the next one, and where
+      // the prediction is for: "High 7:15 AM · Low 1:32 PM" / "San Francisco (Golden Gate)"
       const t12 = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      label.querySelector('.ss-next')?.remove();
-      if (sm) sm.insertAdjacentHTML('afterend', `<span class="ss-next">${next.slice(0, 2).map(h => `${h.type === 'H' ? 'High' : 'Low'} ${t12(h.ms)}`).join(' · ')}</span>`);
+      const lastTurn = hl.filter(h => h.ms <= ms).pop(), turns = [lastTurn, next[0]].filter(Boolean);
+      label.querySelectorAll('.ss-next, .ss-where').forEach(el => el.remove());
+      if (sm) sm.insertAdjacentHTML('afterend', `<span class="ss-next">${turns.map(h => `${h.type === 'H' ? 'High' : 'Low'} ${t12(h.ms)}`).join(' · ')}</span>`
+        + `<span class="ss-where">${tides.name}</span>`);
     };
     const prevOnTime = flow.onTime;
     flow.onTime = (t) => { prevOnTime(t); showTide(t); };
