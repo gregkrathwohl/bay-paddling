@@ -1,6 +1,6 @@
 // Animated surface currents from NOAA SFBOFS (scripts/fetch-sfbofs.py).
 // A living background: streaks drifting with the water. Strength shows as motion
-// (faster, longer streaks); "colour by speed" tints the water itself by current speed.
+// (faster, longer streaks). The data comes from a field (src/currents.js).
 //
 // The streaks are drawn *in the map*: a canvas that covers the current view (plus a
 // margin) at screen resolution, given to MapLibre as a canvas source + raster layer.
@@ -10,9 +10,6 @@
 
 const FPS = 30;
 const MARGIN = 0.1;      // canvas reaches 10% beyond the view on each side
-// background "colour by speed" ramp (m/s → colour), PredictWind-style but softer
-const RAMP = [[0, [207, 230, 239]], [0.25, [159, 208, 224]], [0.5, [124, 196, 176]], [0.8, [232, 210, 122]], [1.2, [237, 161, 94]], [1.6, [217, 103, 76]]];
-
 // every look-and-feel knob in one place; the tuning panel edits these live
 export const DEFAULTS = {
   // tuned by Greg 2026-11-17 (v4): fine, opaque streaks with longer trails, on slightly toned water
@@ -27,61 +24,13 @@ export const DEFAULTS = {
   life: 80,         // average particle life in frames (too long and particles bunch into 'tide lines')
 };
 
-// Big areas: one RGB image per hour (scripts/fetch-currents.py), R = east-west, G = north-south
-// (square-root companded), B = water. Only the hours around the one you're looking at are kept
-// in memory; the rest load on demand as the time slider moves.
-export async function loadFrames(dir) {
-  const meta = await fetch(`${dir}/index.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
-  if (!meta) return null;
-  const n = meta.nx * meta.ny, max = meta.encoding.max;
-  const lut = new Int16Array(256);   // byte → mm/s
-  for (let b = 0; b < 256; b++) { const f = (b - 128) / 127; lut[b] = Math.round(Math.sign(f) * f * f * max * 1000); }
-  const d = { ...meta, scale: 1000, u: [], v: [], mask: null, pending: {} };
-  d.load = (t) => {
-    if (d.u[t] || d.pending[t]) return d.pending[t];
-    return (d.pending[t] = (async () => {
-      const blob = await fetch(`${dir}/${meta.frames[t]}`).then(r => r.blob());
-      const img = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-      const ctx = new OffscreenCanvas(meta.nx, meta.ny).getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0);
-      const px = ctx.getImageData(0, 0, meta.nx, meta.ny).data;
-      const u = new Int16Array(n), v = new Int16Array(n);
-      if (!d.mask) { d.mask = new Uint8Array(n); for (let i = 0; i < n; i++) d.mask[i] = px[i * 4 + 2] > 127; }
-      for (let i = 0; i < n; i++) { u[i] = lut[px[i * 4]]; v[i] = lut[px[i * 4 + 1]]; }
-      d.u[t] = u; d.v[t] = v; delete d.pending[t];
-      d.onLoad?.(t);
-    })());
-  };
-  // keep the frames around time t (and prefetch the next ones); drop the rest
-  d.need = (t) => {
-    const t0 = Math.floor(t);
-    for (let k = t0 - 1; k <= t0 + 2; k++) if (k >= 0 && k < meta.times.length) d.load(k);
-    d.u.forEach((_, k) => { if (Math.abs(k - t) > 4) { delete d.u[k]; delete d.v[k]; } });
-  };
-  const now = Date.now(), ts = meta.times.map(Date.parse);
-  const i = ts.reduce((b, x, k) => (Math.abs(x - now) < Math.abs(ts[b] - now) ? k : b), 0);
-  await Promise.all([d.load(i), i + 1 < ts.length && d.load(i + 1)]);
-  return d;
-}
-
 export class FlowLayer {
-  constructor(map, data, { onTime, beforeId, speedBeforeId, isWater, params } = {}) {
-    Object.assign(this, { map, data, onTime, beforeId, speedBeforeId, isWater });
+  constructor(map, data, { onTime, beforeId, isWater, params } = {}) {
+    Object.assign(this, { map, data, onTime, beforeId, isWater });
     this.p = { ...DEFAULTS, ...(params || {}) };
-    // compact files list values only for water cells: expand to full grids once
-    if (data.water) {
-      const n = data.nx * data.ny, idx = data.water;
-      data.mask = new Uint8Array(n); idx.forEach(i => (data.mask[i] = 1));
-      const full = (rows) => rows.map(r => { const a = new Int16Array(n); r.forEach((v, k) => (a[idx[k]] = v)); return a; });
-      data.u = full(data.u); data.v = full(data.v);
-    }
-    const [w, , , n] = data.bbox;
-    this.gw = w; this.gn = n;
-    this.gmx = 111320 * Math.cos(((data.bbox[1] + data.bbox[3]) / 2) * Math.PI / 180);
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d');
     this.t = this.nowIndex();
-    this.colour = false;
     this.visible = true;
     this.fit();
     this.attach();
@@ -93,13 +42,6 @@ export class FlowLayer {
   attach() {
     const { map } = this;
     if (!map.getStyle() || map.getSource('flow')) return;
-    // the speed-coloured water (used instead of the depth tint when "Colour by speed" is on)
-    map.addSource('flow-speed', { type: 'image', url: this.speedImage(), coordinates: this.gridCoords() });
-    map.addLayer({ id: 'flow-speed', type: 'raster', source: 'flow-speed',
-      layout: { visibility: this.colour ? 'visible' : 'none' },
-      paint: { 'raster-fade-duration': 0, 'raster-resampling': 'linear', 'raster-opacity': 0.9 } },
-      map.getLayer(this.speedBeforeId) ? this.speedBeforeId : undefined);
-    if (map.getLayer('depth')) map.setLayoutProperty('depth', 'visibility', this.colour ? 'none' : 'visible');
     map.addSource('flow', { type: 'canvas', canvas: this.canvas, coordinates: this.coords, animate: true });
     map.addLayer({ id: 'flow', type: 'raster', source: 'flow',
       layout: { visibility: this.visible ? 'visible' : 'none' },
@@ -133,6 +75,7 @@ export class FlowLayer {
     // keep particles that are still in view, top up the rest
     const z = this.map.getZoom(), thin = z < 13.5 ? Math.pow(2, (z - 13.5) * this.p.zoomedOut) : 1;
     const count = Math.round(((W * H) / 1000) * this.p.density * thin);
+    this.data.view?.(this, this.mPerPx * r, this.t);   // metres per CSS pixel
     const keep = (this.parts || []).filter(p => p.lng > this.west && p.lng < this.east && p.lat > this.south && p.lat < this.north);
     this.parts = keep.slice(0, count).concat(Array.from({ length: Math.max(0, count - keep.length) }, () => this.spawn(true)));
   }
@@ -149,29 +92,12 @@ export class FlowLayer {
     return best;
   }
 
-  // velocity (m/s) at lng/lat: bilinear in space (water cells only), linear in time
+  // velocity (m/s) at lng/lat, or null over land / while its tile is loading
   vel(lng, lat) {
-    const d = this.data, gx = ((lng - this.gw) * this.gmx) / d.cell - 0.5, gy = ((this.gn - lat) * 110540) / d.cell - 0.5;
-    const x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
-    const t0 = Math.floor(this.t), t1 = Math.min(d.times.length - 1, t0 + 1), ft = this.t - t0;
-    if (!d.mask) return null;
-    let U0 = d.u[t0], U1 = d.u[t1], V0 = d.v[t0], V1 = d.v[t1];
-    if (!U0 && !U1) return null;            // hour still loading
-    if (!U0) { U0 = U1; V0 = V1; } else if (!U1) { U1 = U0; V1 = V0; }
-    let u = 0, v = 0, ws = 0;
-    for (const [cx, cy, wt] of [[x0, y0, (1 - fx) * (1 - fy)], [x0 + 1, y0, fx * (1 - fy)], [x0, y0 + 1, (1 - fx) * fy], [x0 + 1, y0 + 1, fx * fy]]) {
-      if (cx < 0 || cy < 0 || cx >= d.nx || cy >= d.ny) continue;
-      const i = cy * d.nx + cx;
-      if (!d.mask[i]) continue;
-      u += wt * (U0[i] * (1 - ft) + U1[i] * ft);
-      v += wt * (V0[i] * (1 - ft) + V1[i] * ft);
-      ws += wt;
-    }
-    if (ws < 0.3) return null;
+    const v = this.data.sample(this.t, lng, lat);
     // exact water mask from our own coastline grid: streaks never cross land
-    if (this.isWater && !this.isWater(lng, lat)) return null;
-    const k = d.scale || 100;
-    return [u / ws / k, v / ws / k];
+    if (!v || (this.isWater && !this.isWater(lng, lat))) return null;
+    return v;
   }
 
   spawn(randomAge = false) {
@@ -232,48 +158,10 @@ export class FlowLayer {
   stop() { this.running = false; cancelAnimationFrame(this.raf); }
   setTime(t) {
     this.t = t; this.onTime?.(t);
-    this.data.need?.(t);
-    if (this.colour) { clearTimeout(this.sT); this.sT = setTimeout(() => this.map.getSource('flow-speed')?.updateImage({ url: this.speedImage(), coordinates: this.gridCoords() }), 30); }
-  }
-  setColour(on) {
-    this.colour = on;
-    if (on) this.map.getSource('flow-speed')?.updateImage({ url: this.speedImage(), coordinates: this.gridCoords() });
-    if (this.map.getLayer('flow-speed')) this.map.setLayoutProperty('flow-speed', 'visibility', on ? 'visible' : 'none');
-    if (this.map.getLayer('depth')) this.map.setLayoutProperty('depth', 'visibility', on ? 'none' : 'visible');
+    if (this.CW) this.data.view?.(this, this.mPerPx * this.pxScale, t);
   }
   setParams(patch) { Object.assign(this.p, patch); if ('density' in patch || 'zoomedOut' in patch || 'life' in patch) this.fit(); }
 
-  // corners of the current grid, for the speed image
-  gridCoords() {
-    const d = this.data, wM = d.nx * d.cell, hM = d.ny * d.cell;
-    const e = this.gw + wM / this.gmx, s = this.gn - hM / 110540;
-    return [[this.gw, this.gn], [e, this.gn], [e, s], [this.gw, s]];
-  }
-  // one pixel per grid cell, coloured by speed at the current time; land transparent
-  speedImage() {
-    const d = this.data, c = document.createElement('canvas'); c.width = d.nx; c.height = d.ny;
-    const ctx = c.getContext('2d'), img = ctx.createImageData(d.nx, d.ny);
-    const t0 = Math.floor(this.t), t1 = Math.min(d.times.length - 1, t0 + 1), ft = this.t - t0;
-    const U0 = d.u[t0] || d.u[t1], U1 = d.u[t1] || d.u[t0], V0 = d.v[t0] || d.v[t1], V1 = d.v[t1] || d.v[t0], k = d.scale || 100;
-    if (!U0 || !d.mask) { ctx.putImageData(img, 0, 0); return c.toDataURL(); }
-    for (let y = 0; y < d.ny; y++) for (let x = 0; x < d.nx; x++) {
-      const i = y * d.nx + x;
-      const lng = this.gw + ((x + 0.5) * d.cell) / this.gmx, lat = this.gn - ((y + 0.5) * d.cell) / 110540;
-      if (!d.mask[i] || (this.isWater && !this.isWater(lng, lat))) continue;
-      const u = (U0[i] * (1 - ft) + U1[i] * ft) / k, v = (V0[i] * (1 - ft) + V1[i] * ft) / k;
-      const col = this.rampColour(Math.hypot(u, v));
-      img.data.set([col[0], col[1], col[2], 255], i * 4);
-    }
-    ctx.putImageData(img, 0, 0);
-    return c.toDataURL();
-  }
-  rampColour(sp) {
-    for (let i = 1; i < RAMP.length; i++) if (sp <= RAMP[i][0]) {
-      const [s0, c0] = RAMP[i - 1], [s1, c1] = RAMP[i], f = (sp - s0) / (s1 - s0);
-      return c0.map((v, k) => Math.round(v + (c1[k] - v) * f));
-    }
-    return RAMP[RAMP.length - 1][1];
-  }
   setVisible(on) {
     this.visible = on;
     if (this.map.getLayer('flow')) this.map.setLayoutProperty('flow', 'visibility', on ? 'visible' : 'none');

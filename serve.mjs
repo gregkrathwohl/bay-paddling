@@ -9,7 +9,7 @@ const port = Number(process.env.PORT || 5191);
 const types = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.geojson': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml',
-  '.map': 'application/json',
+  '.map': 'application/json', '.pmtiles': 'application/octet-stream',
 };
 
 http.createServer((req, res) => {
@@ -51,6 +51,15 @@ http.createServer((req, res) => {
   let p = file;
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
   if (!fs.existsSync(p)) return res.writeHead(404).end('not found');
-  res.writeHead(200, { 'Content-Type': types[path.extname(p)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+  const type = types[path.extname(p)] || 'application/octet-stream', size = fs.statSync(p).size;
+  // byte ranges, like GitHub Pages: PMTiles archives are read a few KB at a time
+  const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
+  if (range) {
+    const start = +range[1], end = Math.min(size - 1, range[2] ? +range[2] : size - 1);
+    if (start >= size) return res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end();
+    res.writeHead(206, { 'Content-Type': type, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' });
+    return fs.createReadStream(p, { start, end }).pipe(res);
+  }
+  res.writeHead(200, { 'Content-Type': type, 'Content-Length': size, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' });
   fs.createReadStream(p).pipe(res);
 }).listen(port, () => console.log(`bay-paddling on http://localhost:${port}`));

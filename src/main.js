@@ -7,7 +7,8 @@ import { addImages } from './patterns.js';
 import { LabelLayer, STYLES } from './labels.js';
 import { Router } from './router.js';
 import { resolver, buildTrip, summary, fmtDist, UNITS } from './trips.js';
-import { FlowLayer, loadFrames, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
+import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
+import { gridField, tileField } from './currents.js';
 
 window.maplibregl = maplibregl;
 const place = new URLSearchParams(location.search).get('place') || 'richardson-bay';
@@ -80,8 +81,8 @@ const PREVIEW = new URLSearchParams(location.search).has('preview');
 if (PREVIEW) document.body.setAttribute('data-public', '');
 const PUBLIC = document.body.hasAttribute('data-public');
 const EDITOR = !PUBLIC;
-const SAVED_KEYS = ['mode', 'hillshade', 'waterMode', 'waterShade', 'currents', 'colour'];
-const prefs = { mode: 'web', hillshade: false, waterMode: 'ripples', waterShade: 0, currents: true, colour: false, ...(cfg.defaults || {}) };
+const SAVED_KEYS = ['mode', 'hillshade', 'waterMode', 'waterShade', 'currents'];
+const prefs = { mode: 'web', hillshade: false, waterMode: 'ripples', waterShade: 0, currents: true, ...(cfg.defaults || {}) };
 const $ = (id) => document.getElementById(id);
 const status = (t) => { const el = $('ed-status'); if (el) { el.textContent = t; el.classList.toggle('busy', t !== 'Saved'); } };
 const postJSON = (url, body) => fetch(url, { method: 'POST', body: JSON.stringify(body) })
@@ -300,20 +301,18 @@ map.on('click', redrawGridSoon);
 
 // --- NOAA SFBOFS currents: pale moving streaks, time slider
 // hourly images (big areas) or one JSON file (Richardson Bay)
-const flowData = await loadFrames(`${base}/data/currents`)
-  || await fetch(`${base}/data/currents-sfbofs.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+const flowData = await tileField(`${base}/data/currents`)
+  || await fetch(`${base}/data/currents-sfbofs.json`).then(r => (r.ok ? r.json() : null)).then(d => d && gridField(d)).catch(() => null);
 if (flowData) {
-  const slider = $('flow-time'), label = $('flow-label'), onBox = $('flow-on'), colourBox = $('flow-colour');
+  const slider = $('flow-time'), label = $('flow-label'), onBox = $('flow-on');
   $('flow-toggle').hidden = false;
   // streaks sit above water, ripples and coast, below piers, roads, routes, buoys and every label.
   // No frozen state: shown means moving.
   const flowKey = 'bay-paddling:flow:v3'; // bump when DEFAULTS change
   const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
-  const flow = new FlowLayer(map, flowData, { beforeId: 'road', speedBeforeId: 'depth', params: savedFlow, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
+  const flow = new FlowLayer(map, flowData, { beforeId: 'road', params: savedFlow, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
-  // a colour-by-speed image waits for its hour to arrive
-  flowData.onLoad = (t) => { if (flow.colour && Math.abs(t - flow.t) < 1) flow.setTime(flow.t); };
   // Now is only useful once you've moved away from now
   const nowBtn = $('flow-now'), nowI = flow.nowIndex();
   const syncNow = () => { nowBtn.disabled = Math.abs(+slider.value - nowI) < 0.5; };
@@ -396,8 +395,6 @@ if (flowData) {
   }
   const show = (on) => { onBox.checked = on; $('flow-panel').hidden = !on; flow.setVisible(on); };
   onBox.addEventListener('change', () => { show(onBox.checked); savePrefs({ currents: onBox.checked }); });
-  colourBox.checked = prefs.colour; flow.setColour(prefs.colour);
-  colourBox.addEventListener('change', () => { flow.setColour(colourBox.checked); savePrefs({ colour: colourBox.checked }); });
   show(prefs.currents);
 
   // --- tuning panel: every streak knob live; "Copy settings" gives values to hard-code

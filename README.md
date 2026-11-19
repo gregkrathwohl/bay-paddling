@@ -31,8 +31,12 @@ inside the bbox on a 100 m grid, deletes each file. src/flow.js animates it.
     .venv/bin/python scripts/fetch-currents.py sf-bay    # → data/currents/000.png … + index.json
     node scripts/fetch-tides.mjs sf-bay
 
-One RGB PNG per hour, one pixel per 50 m cell, north up: R = east-west flow, G = north-south flow
-(square-root companded around 128, max 4 m/s), B = water (from the model's own mesh). ~400 KB/hour;
-the map loads only the hours around the slider. Land comes from OpenFreeMap tiles (style "bay-tiles"),
+fetch-currents.py then runs tile-currents.py, which cuts each hour into a PMTiles archive (a 256-px tile
+pyramid: z3 = 50 m … z0 = 400 m). The map reads only the tiles in view with HTTP range requests
+(GitHub Pages supports them; serve.mjs does too), at the level that suits the zoom. The full-size
+images stay local (nice to look at); only the .pmtiles and index.json are published.
+
+Each hour's image: one RGB pixel per 50 m cell, north up: R = east-west flow, G = north-south flow
+(square-root companded around 128, max 4 m/s), B = water (from the model's own mesh). ~400 KB/hour. Land comes from OpenFreeMap tiles (style "bay-tiles"),
 no OSM download and no route planner yet. The Richardson-only version is tagged richardson-v1
 (checked out at ../bay-paddling-richardson, port 5192).

@@ -104,3 +104,7 @@ json.dump({'source': f'NOAA SFBOFS {day} {run}', 'bbox': [w, s, e, n], 'nx': nx,
            'nowcast': sum(bool(re.search(r'fields\.n\d', k)) for k in keys)},
           open(os.path.join(out_dir, 'index.json'), 'w'), indent=1)
 print('wrote currents/index.json', flush=True)
+
+# then cut them into per-hour tile archives for the map
+import subprocess
+subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), 'tile-currents.py'), place], check=True)
