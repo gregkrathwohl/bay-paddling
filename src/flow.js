@@ -24,6 +24,15 @@ export const DEFAULTS = {
   width: 0.6,       // overall streak width (multiplier)
   life: 80,         // average particle life in frames (too long and particles bunch into 'tide lines')
   colour: '#ffffff', // streak colour
+  calm: 0.3,        // share of streaks kept in slack water (1 = as many as in the channels)
+};
+
+// the viewer's "Currents" setting: Fine = the sparse white wind-map look above; Dense = many slow,
+// translucent streaks that read as moving water (tuned by Greg 2026-11-19). Colour follows the map style.
+export const PRESETS = {
+  fine: () => ({}),
+  dense: (theme) => ({ density: 25.5, zoomedOut: 0.1, speed: 220, trail: 0.925, width: 0.7, calm: 0.6,
+    ...(theme === 'dark' ? { colour: '#a9d3f0', opacity: 0.35 } : { colour: '#1f4f7a', opacity: 0.45 }) }),
 };
 
 export class FlowLayer {
@@ -112,7 +121,8 @@ export class FlowLayer {
       const v = this.vel(lng, lat);
       if (!v) continue;
       // slack water gets fewer particles (it reads as clutter, not flow)
-      if (Math.random() > 0.3 + 0.7 * Math.min(1, Math.hypot(v[0], v[1]) / 0.35)) continue;
+      const calm = this.p.calm ?? 0.3;
+      if (Math.random() > calm + (1 - calm) * Math.min(1, Math.hypot(v[0], v[1]) / 0.35)) continue;
       const life = Math.round(this.p.life * (0.65 + 0.7 * Math.random()));
       return { lng, lat, age: randomAge ? (Math.random() * life) | 0 : 0, life };
     }
@@ -131,23 +141,35 @@ export class FlowLayer {
     const mPerFrame = (this.p.speed / FPS) * (z > 13.5 ? Math.pow(2, -(z - 13.5) * this.p.zoomEase) : Math.pow(2, (13.5 - z) * this.p.zoomOutSpeed));
     const K = this.strengthK().opacity, hex = this.p.colour || '#ffffff';
     const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(',');
+    // segments go into a few opacity × width buckets and each bucket is one stroke: far cheaper than a
+    // stroke per streak (thousands a frame when dense)
+    const NA = 12, NW = 4, buckets = this.buckets ||= Array.from({ length: NA * NW }, () => []);
+    for (const b of buckets) b.length = 0;
+    const cosLat = Math.cos(((this.north + this.south) / 2) * Math.PI / 180), W0 = this.west, X = this.CW / (this.east - this.west);
+    const my0 = this.my0, Y = this.CH / (this.my0 - this.my1), merc = (lat) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
     for (const p of this.parts) {
       const vel = p.age <= p.life && this.vel(p.lng, p.lat);
       if (!vel) { Object.assign(p, this.spawn()); continue; }
       p.age++;
       const sp = Math.hypot(vel[0], vel[1]);
-      // visual speed ∝ speed^0.45: slow shallows still drift visibly, channels stay clearly faster
+      // visual speed ∝ speed^compress: slow shallows still drift visibly, channels stay clearly faster
       const vis = sp > 1e-4 ? (1.2 * Math.pow(sp / 1.2, this.p.compress)) / sp : 0;
       const dE = vel[0] * vis * mPerFrame, dN = vel[1] * vis * mPerFrame;
-      const lng2 = p.lng + dE / (111320 * Math.cos(p.lat * Math.PI / 180)), lat2 = p.lat + dN / 110540;
-      const [x1, y1] = this.toPx(p.lng, p.lat), [x2, y2] = this.toPx(lng2, lat2);
+      const lng2 = p.lng + dE / (111320 * cosLat), lat2 = p.lat + dN / 110540;
       const life = Math.min(1, p.age / 8, (p.life - p.age) / 8);
       const strength = Math.min(1, Math.sqrt(sp / 1.2));
-      const width = (1.1 + 0.7 * strength) * r * this.p.width;
-      ctx.strokeStyle = `rgba(${rgb},${Math.min(1, life * (0.65 + 0.35 * strength) * this.p.opacity * K).toFixed(3)})`;
-      ctx.lineWidth = width;
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      const a = Math.min(1, life * (0.65 + 0.35 * strength) * this.p.opacity * K);
+      const ai = Math.min(NA - 1, Math.round(a * (NA - 1))), wi = Math.min(NW - 1, Math.floor(strength * NW));
+      if (ai > 0) buckets[ai * NW + wi].push((p.lng - W0) * X, (my0 - merc(p.lat)) * Y, (lng2 - W0) * X, (my0 - merc(lat2)) * Y);
       p.lng = lng2; p.lat = lat2;
+    }
+    for (let ai = 1; ai < NA; ai++) for (let wi = 0; wi < NW; wi++) {
+      const seg = buckets[ai * NW + wi]; if (!seg.length) continue;
+      ctx.strokeStyle = `rgba(${rgb},${(ai / (NA - 1)).toFixed(3)})`;
+      ctx.lineWidth = (1.1 + 0.7 * ((wi + 0.5) / NW)) * r * this.p.width;
+      ctx.beginPath();
+      for (let k = 0; k < seg.length; k += 4) { ctx.moveTo(seg[k], seg[k + 1]); ctx.lineTo(seg[k + 2], seg[k + 3]); }
+      ctx.stroke();
     }
   }
 

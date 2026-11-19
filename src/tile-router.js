@@ -46,7 +46,7 @@ export class TileRouter {
     this.mx = 111320 * Math.cos(meta.lat0 * Math.PI / 180); this.my = 110540;
     [this.w, this.n] = meta.origin;
     this.T = meta.tile;
-    this.levels = {};            // z → { N, cell, tiles: Map("x/y" → Uint8Array) }
+    this.levels = {};            // z → { N, cell, tiles: Map(ty·64 + tx → Uint8Array) }
     this.setBuffer(30);
     this.ready = null;
   }
@@ -63,7 +63,7 @@ export class TileRouter {
         for (let ty = 0; ty < n; ty++) for (let tx = 0; tx < n; tx++) jobs.push((async () => {
           const r = await pm.getZxy(z, tx, ty); if (!r?.data) return;
           const bmp = await createImageBitmap(new Blob([r.data], { type: 'image/png' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-          tiles.set(`${tx}/${ty}`, bmp);
+          tiles.set(ty * 64 + tx, bmp);
         })());
         await Promise.all(jobs);
         for (const [k, bmp] of tiles) {   // decode one at a time on the shared canvas
@@ -83,7 +83,7 @@ export class TileRouter {
   d(z, x, y) {
     const L = this.levels[z];
     if (!L || x < 0 || y < 0 || x >= L.N || y >= L.N) return 0;
-    const t = L.tiles.get(`${(x / this.T) | 0}/${(y / this.T) | 0}`);
+    const t = L.tiles.get(((y / this.T) | 0) * 64 + ((x / this.T) | 0));
     return t ? t[(y % this.T) * this.T + (x % this.T)] : 0;
   }
   setBuffer(m) { this.buffer = m; if (this.loaded) this.label(); }

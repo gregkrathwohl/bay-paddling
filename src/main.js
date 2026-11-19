@@ -8,7 +8,7 @@ import { LabelLayer, STYLES } from './labels.js';
 import { Router } from './router.js';
 import { TileRouter } from './tile-router.js';
 import { resolver, buildTrip, summary, fmtDist, UNITS } from './trips.js';
-import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
+import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS, PRESETS as FLOW_PRESETS } from './flow.js';
 import { tileField } from './currents.js';
 import { hoverInfo } from './hover.js';
 
@@ -88,12 +88,12 @@ const Q = new URLSearchParams(location.search);
 const view = {
   theme: Q.get('style') === 'dark' ? 'dark' : 'light', buoys: Q.get('buoys') !== '0',
   streaks: Q.has('streaks') ? +Q.get('streaks') : null, rate: Q.get('rate') || '0.33',
-  play: Q.has('play'), screensaver: Q.has('screensaver'),
+  play: Q.has('play'), screensaver: Q.has('screensaver'), currents: Q.get('currents') === 'fine' ? 'fine' : 'dense',
 };
 const writeView = () => {
   const q = new URLSearchParams(location.search);
   const set = (k, v, def) => (v === def || v == null ? q.delete(k) : q.set(k, v));
-  set('style', view.theme, 'light'); set('buoys', view.buoys ? null : '0'); set('rate', view.rate, '0.33');
+  set('style', view.theme, 'light'); set('currents', view.currents, 'dense'); set('buoys', view.buoys ? null : '0'); set('rate', view.rate, '0.33');
   set('streaks', view.streaks == null ? null : String(view.streaks));
   view.play ? q.set('play', '') : q.delete('play');
   view.screensaver ? q.set('screensaver', '') : q.delete('screensaver');
@@ -336,11 +336,10 @@ if (flowData) {
   $('flow-toggle').hidden = false;
   // streaks sit above water, ripples and coast, below piers, roads, routes, buoys and every label.
   // No frozen state: shown means moving.
-  const flowKey = 'bay-paddling:flow:v4'; // bump when DEFAULTS change
+  const flowKey = 'bay-paddling:flow:v5'; // bump when DEFAULTS change
   // the lab starts from a dense, dark-blue look (your own tweaks are remembered per browser)
-  const LAB_START = { density: 14, zoomedOut: 0.1, opacity: 0.45, width: 0.7, trail: 0.95, speed: 300, colour: '#1f4f7a' };
-  const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || 'null') ?? (LAB ? LAB_START : {}); } catch { return {}; } })();
-  const flow = new FlowLayer(map, flowData, { beforeId: 'road', params: savedFlow, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
+  const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
+  const flow = new FlowLayer(map, flowData, { beforeId: 'road', params: { ...FLOW_PRESETS[view.currents](view.theme), ...(LAB ? savedFlow : {}) }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
   // Now is only useful once you've moved away from now
@@ -468,7 +467,12 @@ if (flowData) {
     el.addEventListener('input', () => { flow.setStrength(+el.value); view.streaks = +el.value; writeView(); try { localStorage.setItem(key, el.value); } catch {} });
     const theme = $('set-theme'), buoys = $('set-buoys');
     theme.value = view.theme; buoys.checked = view.buoys;
-    theme.addEventListener('change', () => { view.theme = theme.value; document.body.classList.toggle('theme-dark', view.theme === 'dark'); writeView(); restyle(); });
+    // currents look + its colour for this map style (the lab keeps its own tweaks on top)
+    const applyCurrents = () => flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme),
+      ...(LAB ? (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })() : {}) });
+    const cur = $('set-currents'); cur.value = view.currents;
+    cur.addEventListener('change', () => { view.currents = cur.value; writeView(); applyCurrents(); });
+    theme.addEventListener('change', () => { view.theme = theme.value; document.body.classList.toggle('theme-dark', view.theme === 'dark'); writeView(); restyle(); applyCurrents(); });
     const showBuoys = () => { for (const id of ['buoy', 'beacon', 'aton-label']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', view.buoys ? 'visible' : 'none'); };
     buoys.addEventListener('change', () => { view.buoys = buoys.checked; writeView(); showBuoys(); });
     map.on('style.load', showBuoys); showBuoys();
@@ -506,7 +510,7 @@ if (flowData) {
     ['zoomOutSpeed', 'Keep moving when zoomed out', 0, 1, 0.05],
     ['speed', 'Speed', 50, 1200, 10], ['zoomEase', 'Calm when zoomed in', 0, 1, 0.05],
     ['compress', 'Slow-water boost (lower = more)', 0.2, 1, 0.05], ['trail', 'Trail length', 0.8, 0.995, 0.005],
-    ['life', 'Particle life', 20, 200, 5], ['opacity', 'Opacity', 0.02, 2, 0.01], ['width', 'Width', 0.1, 2.5, 0.05],
+    ['life', 'Particle life', 20, 200, 5], ['calm', 'Streaks in slack water', 0, 1, 0.05], ['opacity', 'Opacity', 0.02, 2, 0.01], ['width', 'Width', 0.1, 2.5, 0.05],
   ];
   const HELP = {
     density: 'how many streaks on screen', zoomedOut: 'fewer streaks as you zoom out',
@@ -536,7 +540,7 @@ if (flowData) {
   });
   $('flow-tune').addEventListener('click', () => { $('tuner').hidden = !$('tuner').hidden; });
   $('tuner-reset').addEventListener('click', () => {
-    flow.setParams({ ...FLOW_DEFAULTS }); persist();
+    flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme) }); try { localStorage.removeItem(flowKey); } catch {}
     const shade = cfg.defaults?.waterShade ?? 0; savePrefs({ waterShade: shade });
     if (map.getLayer('water-shade')) map.setPaintProperty('water-shade', 'fill-opacity', shade);
     render();

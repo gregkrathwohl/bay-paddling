@@ -15,12 +15,14 @@ export async function tileField(dir) {
   const lut = new Float32Array(256);   // byte → m/s (square-root companding, see fetch-currents.py)
   for (let b = 0; b < 256; b++) { const f = (b - 128) / 127; lut[b] = Math.sign(f) * f * f * meta.encoding.max; }
   const archives = [], cache = new Map();   // key "t/z/x/y" → { u, v, m } | null (all land) | Promise
-  const LIMIT = 200;                        // tiles kept in memory (~200 KB each)
+  const LIMIT = 150;                        // tiles kept in memory (~590 KB each)
   let z = ZMAX;                             // level for the current view
 
   const archive = (t) => (archives[t] ||= new PMTiles(`${dir}/${meta.frames[t]}`));
+  // numeric cache keys (the sampler looks tiles up ~100k times a frame: no strings, no temporary arrays)
+  const K = (t, tz, tx, ty) => ((t * 8 + tz) * 64 + ty) * 64 + tx;
   const load = (t, tz, tx, ty) => {
-    const key = `${t}/${tz}/${tx}/${ty}`;
+    const key = K(t, tz, tx, ty);
     if (cache.has(key)) { const v = cache.get(key); cache.delete(key); cache.set(key, v); return; }   // refresh LRU order
     cache.set(key, (async () => {
       const r = await archive(t).getZxy(tz, tx, ty).catch(() => null);
@@ -29,52 +31,51 @@ export async function tileField(dir) {
       const ctx = new OffscreenCanvas(S, S).getContext('2d', { willReadFrequently: true });
       ctx.drawImage(bmp, 0, 0);
       const px = ctx.getImageData(0, 0, S, S).data, n = S * S;
-      const u = new Float32Array(n), v = new Float32Array(n), m = new Uint8Array(n);
+      const u = new Float32Array(n), v = new Float32Array(n), m = new Uint8Array(n);   // ~330 KB a tile
       for (let i = 0; i < n; i++) { m[i] = px[i * 4 + 2] > 127; u[i] = lut[px[i * 4]]; v[i] = lut[px[i * 4 + 1]]; }
       if (cache.has(key)) cache.set(key, { u, v, m });
     })());
     for (const k of cache.keys()) { if (cache.size <= LIMIT) break; if (!(cache.get(k) instanceof Promise)) cache.delete(k); }
   };
-  // one cell at level tz, hour t: [u, v] or null (land, outside, or not loaded yet → undefined)
-  const cellAt = (t, tz, cx, cy) => {
-    const tile = cache.get(`${t}/${tz}/${Math.floor(cx / S)}/${Math.floor(cy / S)}`);
-    if (!tile || tile instanceof Promise) return tile === null ? null : undefined;
-    const i = (cy % S) * S + (cx % S);
-    return tile.m[i] ? [tile.u[i], tile.v[i]] : null;
-  };
-  // bilinear at one level and hour; undefined if any needed tile is still loading
-  const at = (t, tz, lng, lat) => {
+  // bilinear at one level and hour → writes out[0..1]; returns 1 = water, 0 = land/outside, -1 = a tile is still loading
+  const at = (t, tz, lng, lat, out) => {
     const cell = CELL * (1 << (ZMAX - tz)), N = S << tz;
     const gx = ((lng - w) * mx) / cell - 0.5, gy = ((nN - lat) * MY) / cell - 0.5;
     const x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
     let u = 0, v = 0, ws = 0;
-    for (const [cx, cy, wt] of [[x0, y0, (1 - fx) * (1 - fy)], [x0 + 1, y0, fx * (1 - fy)], [x0, y0 + 1, (1 - fx) * fy], [x0 + 1, y0 + 1, fx * fy]]) {
+    for (let k = 0; k < 4; k++) {
+      const cx = x0 + (k & 1), cy = y0 + (k >> 1);
       if (cx < 0 || cy < 0 || cx >= N || cy >= N) continue;
-      const c = cellAt(t, tz, cx, cy);
-      if (c === undefined) return undefined;
-      if (!c) continue;
-      u += wt * c[0]; v += wt * c[1]; ws += wt;
+      const tile = cache.get(K(t, tz, (cx / S) | 0, (cy / S) | 0));
+      if (tile === null) continue;                       // all land
+      if (!tile || tile instanceof Promise) return -1;
+      const i = (cy % S) * S + (cx % S);
+      if (!tile.m[i]) continue;
+      const wt = (k & 1 ? fx : 1 - fx) * (k >> 1 ? fy : 1 - fy);
+      u += wt * tile.u[i]; v += wt * tile.v[i]; ws += wt;
     }
-    return ws < 0.3 ? null : [u / ws, v / ws];
+    if (ws < 0.3) return 0;
+    out[0] = u / ws; out[1] = v / ws; return 1;
   };
-  const hour = (t, lng, lat) => {
+  const A = [0, 0], B = [0, 0];
+  const hour = (t, lng, lat, out) => {
     // the view's level, else the nearest coarser one that has arrived (z0 is always requested)
-    for (let tz = z; tz >= 0; tz--) { const r = at(t, tz, lng, lat); if (r !== undefined) return r; }
-    return null;
+    for (let tz = z; tz >= 0; tz--) { const r = at(t, tz, lng, lat, out); if (r >= 0) return r; }
+    return 0;
   };
 
   const field = {
     times: meta.times, nowcast: meta.nowcast,
     sample(t, lng, lat) {
       const t0 = Math.floor(t), t1 = Math.min(meta.times.length - 1, t0 + 1), ft = t - t0;
-      const a = hour(t0, lng, lat);
-      if (!a || ft < 0.01) return a;
-      const b = hour(t1, lng, lat);
-      return b ? [a[0] * (1 - ft) + b[0] * ft, a[1] * (1 - ft) + b[1] * ft] : a;
+      if (!hour(t0, lng, lat, A)) return null;
+      if (ft < 0.01 || !hour(t1, lng, lat, B)) return [A[0], A[1]];
+      return [A[0] * (1 - ft) + B[0] * ft, A[1] * (1 - ft) + B[1] * ft];
     },
     // called by the flow layer after each pan/zoom and time change: pick the level, fetch what's in view
     view({ west, east, south, north }, mPerPx, t) {
-      z = Math.max(0, Math.min(ZMAX, ZMAX - Math.floor(Math.log2(Math.max(1, (mPerPx * 3) / CELL)))));
+      // one level finer than the screen strictly needs: dense streaks show the small eddies
+      z = Math.max(0, Math.min(ZMAX, ZMAX - Math.floor(Math.log2(Math.max(1, (mPerPx * 1.5) / CELL)))));
       const cell = CELL * (1 << (ZMAX - z)), n = 1 << z;
       const tx = (lng) => Math.max(0, Math.min(n - 1, Math.floor(((lng - w) * mx) / cell / S)));
       const ty = (lat) => Math.max(0, Math.min(n - 1, Math.floor(((nN - lat) * MY) / cell / S)));
