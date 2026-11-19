@@ -355,3 +355,4 @@ body.theme-dark .hover-card { background: rgba(22,28,34,0.94); color: #e3e6e8; }
 .ss-caption .ss-next { display: block; font-size: 17px; }
 .ss-caption .ss-where { display: block; font-size: 14px; opacity: 0.75; }
 .lab-info { font: 600 12px var(--sans); color: #2f5f86; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.lab-switch { margin: 0 0 8px; font: 500 12px var(--sans); border: 1px solid #cfd6db; background: #fff; border-radius: 7px; padding: 4px 10px; cursor: pointer; }

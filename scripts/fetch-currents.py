@@ -8,7 +8,9 @@ u and v are stored with square-root companding so slow water keeps detail:
 A neutral grey (128,128) is still water; land is black-ish with B = 0.
 
 The water mask is the model's own mesh: a cell is water if it falls inside an FVCOM triangle.
-Values are inverse-distance weighted from the 3 nearest element centres (KD-tree).
+Values are linear (barycentric) interpolation between model element centres: smooth, no terraces.
+(The first version used the 3 nearest centres, inverse-distance weighted, which left faint
+patches that dense streaks made visible.) Cells outside the centres' hull use the nearest one.
 
 usage: .venv/bin/python scripts/fetch-currents.py <place> [YYYY/MM/DD] [run e.g. t15z]
 needs: numpy netCDF4 scipy matplotlib pillow
@@ -16,7 +18,7 @@ needs: numpy netCDF4 scipy matplotlib pillow
 """
 import json, os, re, sys, tempfile, urllib.request, datetime as dt
 import numpy as np, netCDF4
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree, Delaunay
 from matplotlib.tri import Triangulation
 from PIL import Image
 
@@ -79,11 +81,17 @@ for i, k in enumerate(keys):
         # water = inside a model triangle
         tri = Triangulation(lon, lat, nv[sel])
         water = (tri.get_trifinder()(GX.ravel(), GY.ravel()) >= 0)
-        # 3 nearest element centres, inverse-distance weighted
-        tree = cKDTree(np.c_[(lonc[sel] - w) * mx, (n - latc[sel]) * my])
+        # linear interpolation on a triangulation of the element centres (weights computed once)
+        ctr = np.c_[(lonc[sel] - w) * mx, (n - latc[sel]) * my]
         pts = np.c_[(GX.ravel()[water] - w) * mx, (n - GY.ravel()[water]) * my]
-        dst, idx = tree.query(pts, k=3)
-        wts = 1 / np.maximum(dst, 1); wts /= wts.sum(1, keepdims=True)
+        dt = Delaunay(ctr)
+        simp = dt.find_simplex(pts)
+        inside = simp >= 0
+        T = dt.transform[simp[inside]]
+        b = np.einsum('ijk,ik->ij', T[:, :2], pts[inside] - T[:, 2])
+        idx = np.zeros((len(pts), 3), int); wts = np.zeros((len(pts), 3))
+        idx[inside] = dt.simplices[simp[inside]]; wts[inside] = np.c_[b, 1 - b.sum(1)]
+        _, near = cKDTree(ctr).query(pts[~inside]); idx[~inside, 0] = near; wts[~inside, 0] = 1
         print(f'{sel.size} mesh elements → grid {nx}×{ny} @ {CELL} m, {water.sum()} water cells', flush=True)
     u = ds['u'][0, 0, :].data[sel]; v = ds['v'][0, 0, :].data[sel]
     t = netCDF4.num2date(ds['time'][0], ds['time'].units, only_use_cftime_datetimes=False)

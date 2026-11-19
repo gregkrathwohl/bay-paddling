@@ -47,31 +47,35 @@ const UPDATE_FS = `#version 300 es
   precision highp float;
   uniform sampler2D u_state;
   uniform vec4 u_view;          // the view in metres: x0, y0, x1, y1 (where particles respawn)
-  uniform float u_step, u_compress, u_seed, u_life, u_calm, u_dage;   // u_dage: age gained this frame (1 = one 30 fps frame)
+  uniform float u_step, u_compress, u_life, u_calm, u_dage;   // u_dage: age gained this frame (1 = one 30 fps frame)
+  uniform uint u_frame;
   ${CURRENT}
   out vec4 o;
-  // a cheap per-pixel random number generator
-  float rand(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
-  vec4 spawn(vec2 seed) {
+  // random numbers: a PCG integer hash, seeded per particle and per frame. (The common
+  // fract(sin(dot(...))) one-liner is correlated between neighbouring pixels and drops new particles
+  // onto a faint lattice, which shows up as a grid in slow water.)
+  uint pcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
+  uint rng;
+  float rand() { rng = pcg(rng); return float(rng) / 4294967295.0; }
+  vec4 spawn() {
     // up to 8 tries at a random spot in view; slack water is accepted less often (u_calm)
     for (int i = 0; i < 8; i++) {
-      vec2 r = vec2(rand(seed + float(i) * 1.37), rand(seed.yx + float(i) * 2.91));
-      vec2 m = mix(u_view.xy, u_view.zw, r);
+      vec2 m = mix(u_view.xy, u_view.zw, vec2(rand(), rand()));
       vec3 c = current(m);
       float keep = u_calm + (1.0 - u_calm) * min(1.0, length(c.xy) / 0.35);
-      if (c.z > 0.5 && rand(seed + float(i) * 7.3) < keep) {
-        float life = u_life * (0.65 + 0.7 * rand(seed * 3.1 + float(i)));
-        return vec4(m, -rand(seed * 5.7) * life, life);   // negative age = staggered start (no fade-in wave)
+      if (c.z > 0.5 && rand() < keep) {
+        float life = u_life * (0.65 + 0.7 * rand());
+        return vec4(m, -rand() * life, life);   // negative age = staggered start (no fade-in wave)
       }
     }
     return vec4(-1e6, -1e6, 1e6, 0.0);   // no water found: stay dead, try again next frame
   }
   void main() {
     vec4 p = texelFetch(u_state, ivec2(gl_FragCoord.xy), 0);
-    vec2 seed = gl_FragCoord.xy * 0.001 + u_seed;
+    rng = pcg(uint(gl_FragCoord.x) + pcg(uint(gl_FragCoord.y) + pcg(u_frame)));
     vec3 c = current(p.xy);
     bool outside = any(lessThan(p.xy, u_view.xy)) || any(greaterThan(p.xy, u_view.zw));
-    if (p.z > p.w || c.z < 0.5 || outside) { o = spawn(seed); return; }
+    if (p.z > p.w || c.z < 0.5 || outside) { o = spawn(); return; }
     // visual speed ∝ speed^compress (slow water still drifts visibly), north is −y
     float sp = length(c.xy);
     float vis = sp > 1e-4 ? 1.2 * pow(sp / 1.2, u_compress) / sp : 0.0;
@@ -271,7 +275,7 @@ export class FlowGL {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.state[0]); gl.uniform1i(P.u.u_state, 0);
     this.bindCurrent(P);
     gl.uniform4fv(P.u.u_view, this.viewM);
-    gl.uniform1f(P.u.u_step, step); gl.uniform1f(P.u.u_compress, this.p.compress); gl.uniform1f(P.u.u_seed, Math.random());
+    gl.uniform1f(P.u.u_step, step); gl.uniform1f(P.u.u_compress, this.p.compress); gl.uniform1ui(P.u.u_frame, (this.frame = ((this.frame || 0) + 1) >>> 0));
     gl.uniform1f(P.u.u_life, this.p.life); gl.uniform1f(P.u.u_calm, this.p.calm ?? 0.3); gl.uniform1f(P.u.u_dage, 30 * dt);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 

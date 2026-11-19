@@ -508,7 +508,7 @@ if (flowData) {
 
   // --- tuning panel: every streak knob live; "Copy settings" gives values to hard-code
   const SLIDERS = [
-    ['density', 'Density', 0.2, Q.has('gl') ? 300 : 30, Q.has('gl') ? 0.5 : 0.1], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
+    ['density', 'Density', 0.2, Q.has('gl') ? 1500 : 30, Q.has('gl') ? 1 : 0.1], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
     ['zoomOutSpeed', 'Keep moving when zoomed out', 0, 1, 0.05],
     ['speed', 'Speed', 50, 1200, 10], ['zoomEase', 'Calm when zoomed in', 0, 1, 0.05],
     ['compress', 'Slow-water boost (lower = more)', 0.2, 1, 0.05], ['trail', 'Trail length', 0.8, 0.995, 0.005],
@@ -556,6 +556,12 @@ if (flowData) {
     $('tuner').hidden = false; setCollapsed(true);
     // live readout: renderer, streak count, frames per second
     const info = document.createElement('div'); info.className = 'lab-info'; $('tuner').prepend(info);
+    // one click between the two renderers (reloads with or without ?gl, same view)
+    const sw = document.createElement('button'); sw.className = 'lab-switch';
+    sw.textContent = Q.has('gl') ? 'Switch to Canvas renderer' : 'Switch to WebGL renderer';
+    sw.addEventListener('click', () => { const q = new URLSearchParams(location.search); q.has('gl') ? q.delete('gl') : q.set('gl', '');
+      location.search = q.toString().replace(/=(&|$)/g, '$1'); });
+    info.after(sw);
     let last = performance.now(), frames = 0;
     const count = () => { frames++; requestAnimationFrame(count); }; requestAnimationFrame(count);
     setInterval(() => { const now = performance.now(), fps = Math.round(frames * 1000 / (now - last)); frames = 0; last = now;
