@@ -6,7 +6,7 @@ import fs from 'node:fs';
 const place = process.argv[2] || 'richardson-bay';
 const cfg = JSON.parse(fs.readFileSync(`places/${place}/place.json`, 'utf8'));
 if (!cfg.tides?.station) { console.log('no tides.station in place.json'); process.exit(0); }
-const curPath = [`places/${place}/data/currents/index.json`, `places/${place}/data/currents-sfbofs.json`].find(f => fs.existsSync(f));
+const curPath = [`places/${cfg.currents?.from || place}/data/currents/index.json`].find(f => fs.existsSync(f));
 let from = new Date(Date.now() - 86400e3), to = new Date(Date.now() + 3 * 86400e3);
 if (curPath) {
   const t = JSON.parse(fs.readFileSync(curPath, 'utf8')).times;

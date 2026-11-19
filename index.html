@@ -108,6 +108,9 @@
 </section>
 
 <div class="flow-panel" id="flow-panel" hidden>
+  <button id="flow-play" class="flow-play" title="Play the tides" aria-label="Play">
+    <svg class="i-play" viewBox="0 0 16 16" width="14" height="14"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>
+    <svg class="i-pause" viewBox="0 0 16 16" width="14" height="14"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg></button>
   <div class="flow-track">
     <input type="range" id="flow-time" min="0" max="1" step="0.05" aria-label="Forecast time">
     <div class="flow-tide" id="flow-tide" aria-hidden="true"></div>
@@ -115,6 +118,10 @@
   </div>
   <span id="flow-label" class="flow-when"></span>
   <button id="flow-now" title="Back to the current hour" disabled>Now</button>
+  <select id="flow-rate" class="flow-rate" title="Playback speed" aria-label="Playback speed">
+    <option value="0.1">1 h in 10 s</option><option value="0.33" selected>1 h in 3 s</option><option value="1">1 h a second</option>
+  </select>
+  <label class="flow-strength" title="More or fewer current streaks">Streaks<input type="range" id="flow-strength" min="0" max="1" step="0.01" value="0.5"></label>
   <button id="flow-tune" class="dev-only">Tune</button>
 </div>
 

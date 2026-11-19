@@ -1,4 +1,4 @@
-// Animated surface currents from NOAA SFBOFS (scripts/fetch-sfbofs.py).
+// Animated surface currents from NOAA SFBOFS (scripts/fetch-currents.py).
 // A living background: streaks drifting with the water. Strength shows as motion
 // (faster, longer streaks). The data comes from a field (src/currents.js).
 //
@@ -14,7 +14,8 @@ const MARGIN = 0.1;      // canvas reaches 10% beyond the view on each side
 export const DEFAULTS = {
   // tuned by Greg 2026-11-17 (v4): fine, opaque streaks with longer trails, on slightly toned water
   density: 3,       // particles per 1000 px² of screen at zoom 13.5
-  zoomedOut: 0.65,   // how fast density thins as you zoom out (0 = no thinning)
+  zoomedOut: 0.3,    // how fast density thins as you zoom out (0 = no thinning)
+  zoomOutSpeed: 0.8, // below zoom 13.5, keep streaks moving on screen (0 = real speed, 1 = same pixels/s as at 13.5)
   speed: 380,       // streaks move this many times faster than the water
   zoomEase: 0.85,   // past zoom 13.5, how much to damp the real-speed increase (0 = none, 1 = constant on screen)
   compress: 0.65,   // visual speed ∝ speed^compress (lower = slow water moves more)
@@ -74,11 +75,14 @@ export class FlowLayer {
     }
     // keep particles that are still in view, top up the rest
     const z = this.map.getZoom(), thin = z < 13.5 ? Math.pow(2, (z - 13.5) * this.p.zoomedOut) : 1;
-    const count = Math.round(((W * H) / 1000) * this.p.density * thin);
+    const count = Math.round(((W * H) / 1000) * this.p.density * thin * this.strengthK().density);
     this.data.view?.(this, this.mPerPx * r, this.t);   // metres per CSS pixel
     const keep = (this.parts || []).filter(p => p.lng > this.west && p.lng < this.east && p.lat > this.south && p.lat < this.north);
     this.parts = keep.slice(0, count).concat(Array.from({ length: Math.max(0, count - keep.length) }, () => this.spawn(true)));
   }
+  // the viewer's single "Currents" slider (0–1, 0.5 = as tuned): more and brighter streaks, or fewer and fainter
+  strengthK() { const s = this.strength ?? 0.5; return { density: Math.pow(2, (s - 0.5) * 2.4), opacity: Math.pow(2, (s - 0.5) * 1.2) }; }
+  setStrength(s) { this.strength = s; this.fit(); }
   snapshot() { const c = document.createElement('canvas'); c.width = this.canvas.width; c.height = this.canvas.height; c.getContext('2d').drawImage(this.canvas, 0, 0); return c; }
   mercY(lat) { const r = lat * Math.PI / 180; return Math.log(Math.tan(Math.PI / 4 + r / 2)); }
   toPx(lng, lat) {
@@ -123,7 +127,8 @@ export class FlowLayer {
     ctx.lineCap = 'butt'; // round caps overlap at every joint and make beads
     // real-speed motion, but eased once you zoom in past 13.5 so it doesn't go to warp speed
     const z = this.map.getZoom();
-    const mPerFrame = (this.p.speed / FPS) * (z > 13.5 ? Math.pow(2, -(z - 13.5) * this.p.zoomEase) : 1);
+    const mPerFrame = (this.p.speed / FPS) * (z > 13.5 ? Math.pow(2, -(z - 13.5) * this.p.zoomEase) : Math.pow(2, (13.5 - z) * this.p.zoomOutSpeed));
+    const K = this.strengthK().opacity;
     for (const p of this.parts) {
       const vel = p.age <= p.life && this.vel(p.lng, p.lat);
       if (!vel) { Object.assign(p, this.spawn()); continue; }
@@ -137,7 +142,7 @@ export class FlowLayer {
       const life = Math.min(1, p.age / 8, (p.life - p.age) / 8);
       const strength = Math.min(1, Math.sqrt(sp / 1.2));
       const width = (1.1 + 0.7 * strength) * r * this.p.width;
-      ctx.strokeStyle = `rgba(255,255,255,${Math.min(1, life * (0.65 + 0.35 * strength) * this.p.opacity).toFixed(3)})`;
+      ctx.strokeStyle = `rgba(255,255,255,${Math.min(1, life * (0.65 + 0.35 * strength) * this.p.opacity * K).toFixed(3)})`;
       ctx.lineWidth = width;
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
       p.lng = lng2; p.lat = lat2;

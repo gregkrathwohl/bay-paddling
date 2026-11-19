@@ -85,7 +85,7 @@ body.planning #map canvas { cursor: crosshair; }
 
 .flow-panel {
   position: absolute; z-index: 3; bottom: 28px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 12px; align-items: center; width: min(540px, calc(100% - 32px));
+  display: flex; gap: 12px; align-items: center; width: min(720px, calc(100% - 32px));
   background: rgba(255, 255, 255, 0.96); border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.10);
   padding: 10px 14px 8px; font: 13px/1.2 var(--sans); color: #222;
 }
@@ -283,3 +283,13 @@ body.ed-float.editor-open .maplibregl-ctrl-bottom-right { right: calc(var(--ed-c
 .editor .field .tip-body { color: #e5e7eb; font-size: 12px; }
 .editor .field .tip { color: #9ca3af; }
 .editor .field .tip:hover { color: var(--ed-ink); }
+
+/* tide playback + the one public streaks knob */
+.flow-play { width: 32px; height: 32px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center; flex: none; color: #3a6f97 !important; }
+.flow-play .i-pause, .flow-play.on .i-play { display: none; }
+.flow-play.on .i-pause { display: block; }
+.flow-rate { font: 500 12px var(--sans); border: 1px solid #cfd6db; border-radius: 7px; padding: 3px 4px; background: #fff; color: #222; }
+.flow-strength { display: grid; gap: 1px; font-size: 10.5px; color: #8a949c; }
+.flow-panel .flow-strength input[type=range] { width: 64px; height: 14px; }
+.flow-track { min-width: 260px; }
+@media (max-width: 700px) { .flow-rate, .flow-strength { display: none; } }

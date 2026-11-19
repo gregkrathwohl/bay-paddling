@@ -1,0 +1,51 @@
+# Twice a day: pull NOAA's newest SFBOFS forecast (54 hourly files, ~3 GB, streamed and deleted),
+# cut it into per-hour PMTiles, refresh the tide predictions, build, and publish to GitHub Pages.
+# Also runs on every push to main, and by hand from the Actions tab.
+name: Publish
+on:
+  schedule:
+    - cron: '20 6,18 * * *'   # 06:20 / 18:20 UTC: after NOAA's 03z and 15z runs have landed
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - run: npm ci
+      - run: pip install -r requirements.txt
+      - name: Currents (NOAA SFBOFS → hourly tiles)
+        run: python scripts/fetch-currents.py sf-bay
+      - name: Tides (NOAA CO-OPS)
+        run: |
+          node scripts/fetch-tides.mjs sf-bay
+          node scripts/fetch-tides.mjs richardson-bay
+      - run: node scripts/build.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

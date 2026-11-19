@@ -2,7 +2,7 @@
  "name": "Richardson Bay",
  "title": "Richardson Bay",
  "subtitle": "Paddling Guide",
- "org": "Sausalito \u00b7 Tiburon \u00b7 Angel Island",
+ "org": "Sausalito · Tiburon · Angel Island",
  "style": "bay",
  "bbox": [
   -122.545,
@@ -52,13 +52,7 @@
   ]
  },
  "currents": {
-  "cell": 50,
-  "bbox": [
-   -122.55,
-   37.79,
-   -122.385,
-   37.91
-  ]
+  "from": "sf-bay"
  },
  "defaults": {
   "mode": "paper",

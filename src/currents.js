@@ -1,39 +1,11 @@
-// Current fields for the flow layer. Both answer sample(t, lng, lat) → [east, north] m/s (or null
-// over land / while loading), with t a fractional hour index into `times`.
-//
-//   gridField  one JSON file with every hour (Richardson Bay, scripts/fetch-sfbofs.py)
-//   tileField  one PMTiles archive per hour (the whole Bay, scripts/tile-currents.py): a 256-px tile
-//              pyramid of the model grid, z3 = 50 m … z0 = 400 m. Only tiles in view are fetched,
-//              by HTTP range request, at the level that suits the zoom.
+// The current field for the flow layer: sample(t, lng, lat) → [east, north] m/s (or null over land /
+// while loading), with t a fractional hour index into `times`.
+// One PMTiles archive per hour (scripts/tile-currents.py): a 256-px tile pyramid of the model grid,
+// z3 = 50 m … z0 = 400 m. Only tiles in view are fetched, by HTTP range request, at the level that
+// suits the zoom.
 import { PMTiles } from 'pmtiles';
 
 const MY = 110540;   // metres per degree of latitude
-
-export function gridField(data) {
-  const n = data.nx * data.ny, idx = data.water;
-  const mask = new Uint8Array(n); idx.forEach(i => (mask[i] = 1));
-  const full = (rows) => rows.map(r => { const a = new Int16Array(n); r.forEach((v, k) => (a[idx[k]] = v)); return a; });
-  const U = full(data.u), V = full(data.v);
-  const [w, s, , nN] = data.bbox, mx = 111320 * Math.cos(((s + data.bbox[3]) / 2) * Math.PI / 180);
-  return {
-    times: data.times, nowcast: data.nowcast,
-    sample(t, lng, lat) {
-      const gx = ((lng - w) * mx) / data.cell - 0.5, gy = ((nN - lat) * MY) / data.cell - 0.5;
-      const x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
-      const t0 = Math.floor(t), t1 = Math.min(data.times.length - 1, t0 + 1), ft = t - t0;
-      let u = 0, v = 0, ws = 0;
-      for (const [cx, cy, wt] of [[x0, y0, (1 - fx) * (1 - fy)], [x0 + 1, y0, fx * (1 - fy)], [x0, y0 + 1, (1 - fx) * fy], [x0 + 1, y0 + 1, fx * fy]]) {
-        if (cx < 0 || cy < 0 || cx >= data.nx || cy >= data.ny) continue;
-        const i = cy * data.nx + cx;
-        if (!mask[i]) continue;
-        u += wt * (U[t0][i] * (1 - ft) + U[t1][i] * ft);
-        v += wt * (V[t0][i] * (1 - ft) + V[t1][i] * ft);
-        ws += wt;
-      }
-      return ws < 0.3 ? null : [u / ws / 100, v / ws / 100];
-    },
-  };
-}
 
 export async function tileField(dir) {
   const meta = await fetch(`${dir}/index.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);

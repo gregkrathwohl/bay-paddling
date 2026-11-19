@@ -8,7 +8,7 @@ import { LabelLayer, STYLES } from './labels.js';
 import { Router } from './router.js';
 import { resolver, buildTrip, summary, fmtDist, UNITS } from './trips.js';
 import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
-import { gridField, tileField } from './currents.js';
+import { tileField } from './currents.js';
 
 window.maplibregl = maplibregl;
 const place = new URLSearchParams(location.search).get('place') || 'richardson-bay';
@@ -300,15 +300,14 @@ const redrawGridSoon = () => { if (gridOn.checked) setTimeout(drawGrid, 50); };
 map.on('click', redrawGridSoon);
 
 // --- NOAA SFBOFS currents: pale moving streaks, time slider
-// hourly images (big areas) or one JSON file (Richardson Bay)
-const flowData = await tileField(`${base}/data/currents`)
-  || await fetch(`${base}/data/currents-sfbofs.json`).then(r => (r.ok ? r.json() : null)).then(d => d && gridField(d)).catch(() => null);
+// tiled hourly currents; a place inside the Bay can borrow them ("currents": {"from": "sf-bay"})
+const flowData = await tileField(`places/${cfg.currents?.from || place}/data/currents`);
 if (flowData) {
   const slider = $('flow-time'), label = $('flow-label'), onBox = $('flow-on');
   $('flow-toggle').hidden = false;
   // streaks sit above water, ripples and coast, below piers, roads, routes, buoys and every label.
   // No frozen state: shown means moving.
-  const flowKey = 'bay-paddling:flow:v3'; // bump when DEFAULTS change
+  const flowKey = 'bay-paddling:flow:v4'; // bump when DEFAULTS change
   const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
   const flow = new FlowLayer(map, flowData, { beforeId: 'road', params: savedFlow, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
@@ -393,6 +392,30 @@ if (flowData) {
     });
     box.addEventListener('pointerleave', () => { hover.hidden = true; });
   }
+  // --- play the tides: the time slider runs on its own (hours per second), looping at the end
+  {
+    const btn = $('flow-play'), rateSel = $('flow-rate'), last = flowData.times.length - 1;
+    let raf = 0, prev = 0;
+    const tick = (ts) => {
+      const dt = prev ? Math.min(0.1, (ts - prev) / 1000) : 0; prev = ts;
+      let t = flow.t + dt * +rateSel.value;
+      if (t > last) t = 0;
+      slider.value = t; flow.setTime(t); syncNow();
+      raf = requestAnimationFrame(tick);
+    };
+    const play = (on) => { btn.classList.toggle('on', on); btn.title = on ? 'Pause' : 'Play the tides'; cancelAnimationFrame(raf); prev = 0; if (on) raf = requestAnimationFrame(tick); };
+    btn.addEventListener('click', () => play(!btn.classList.contains('on')));
+    slider.addEventListener('pointerdown', () => play(false));
+    $('flow-tide')?.addEventListener('pointerdown', () => play(false));
+    nowBtn.addEventListener('click', () => play(false));
+  }
+  // --- the viewer's one knob: more / fewer streaks (remembered per browser)
+  {
+    const el = $('flow-strength'), key = 'bay-paddling:strength';
+    const v0 = (() => { try { return +(localStorage.getItem(key) ?? 0.5); } catch { return 0.5; } })();
+    el.value = v0; flow.setStrength(v0);
+    el.addEventListener('input', () => { flow.setStrength(+el.value); try { localStorage.setItem(key, el.value); } catch {} });
+  }
   const show = (on) => { onBox.checked = on; $('flow-panel').hidden = !on; flow.setVisible(on); };
   onBox.addEventListener('change', () => { show(onBox.checked); savePrefs({ currents: onBox.checked }); });
   show(prefs.currents);
@@ -400,6 +423,7 @@ if (flowData) {
   // --- tuning panel: every streak knob live; "Copy settings" gives values to hard-code
   const SLIDERS = [
     ['density', 'Density', 0.2, 3, 0.05], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
+    ['zoomOutSpeed', 'Keep moving when zoomed out', 0, 1, 0.05],
     ['speed', 'Speed', 50, 1200, 10], ['zoomEase', 'Calm when zoomed in', 0, 1, 0.05],
     ['compress', 'Slow-water boost (lower = more)', 0.2, 1, 0.05], ['trail', 'Trail length', 0.8, 0.99, 0.005],
     ['life', 'Particle life', 20, 200, 5], ['opacity', 'Opacity', 0.2, 2, 0.05], ['width', 'Width', 0.15, 2.5, 0.05],
