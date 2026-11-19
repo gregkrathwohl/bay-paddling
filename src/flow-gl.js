@@ -116,7 +116,8 @@ const DRAW_VS = `#version 300 es
     vec4 pa = u_matrix * vec4(toMerc(a.xy), 0, 1), pb = u_matrix * vec4(toMerc(b.xy), 0, 1);
     vec2 sa = pa.xy / pa.w * u_px * 0.5, sb = pb.xy / pb.w * u_px * 0.5;
     float strength = min(1.0, sqrt(length(current(b.xy).xy) / 1.2));
-    float w = (1.1 + 0.7 * strength) * u_width;
+    // lines thinner than a pixel alias (moiré, "static" while panning): draw them 1 px wide and fainter instead
+    float w0 = (1.1 + 0.7 * strength) * u_width, w = max(w0, 1.0), cover = w0 / w;
     vec2 d = sb - sa; float len = length(d);
     vec2 n = len > 1e-4 ? vec2(-d.y, d.x) / len * w * 0.5 : vec2(0.0);
     // corners: 0,1,2 / 2,1,3 → (a−n, a+n, b−n) / (b−n, a+n, b+n)
@@ -126,7 +127,7 @@ const DRAW_VS = `#version 300 es
     v_m = atB ? b.xy : a.xy;
     gl_Position = vec4(s / (u_px * 0.5) * (atB ? pb.w : pa.w), 0, atB ? pb.w : pa.w);
     float life = min(1.0, min(b.z / 8.0, (b.w - b.z) / 8.0));
-    v_alpha = clamp(life * (0.65 + 0.35 * strength) * u_opacity, 0.0, 1.0);
+    v_alpha = clamp(life * (0.65 + 0.35 * strength) * u_opacity * cover, 0.0, 1.0);
   }`;
 const DRAW_FS = `#version 300 es
   precision highp float;
@@ -189,6 +190,8 @@ export class FlowGL {
     this.attach();
     map.on('style.load', () => this.attach());
     map.on('moveend', () => this.view());
+    map.on('move', () => this.view(true));
+    map.on('movestart', () => { this.moving = true; }); map.on('moveend', () => { this.moving = false; });
     this.view();
   }
   attach() { if (this.map.getStyle() && !this.map.getLayer('flow')) this.map.addLayer(this.layer, this.map.getLayer(this.beforeId) ? this.beforeId : undefined); }
@@ -219,7 +222,7 @@ export class FlowGL {
   // particle count from the view size and the density knobs (same rule as flow.js)
   wantCount() {
     const c = this.map.getContainer(), z = this.map.getZoom();
-    const thin = z < 13.5 ? Math.pow(2, (z - 13.5) * this.p.zoomedOut) : 1, k = Math.pow(2, (this.strength - 0.5) * 2.4);
+    const thin = z < 13.5 ? Math.pow(2, (z - 13.5) * this.p.zoomedOut) : 1, k = this.strengthK().density;
     // phones get at most 200k (their GPUs and batteries); big screens at most 1.5 million
     const cap = innerWidth <= 700 ? 2e5 : 1.5e6;
     return Math.max(1, Math.min(cap, Math.round(((c.clientWidth * c.clientHeight) / 1000) * this.p.density * thin * k)));
@@ -240,11 +243,11 @@ export class FlowGL {
   }
 
   // ---- the view in grid metres, the tile level, and which tiles to fetch
-  view() {
+  view(onlyRect = false) {
     const m = this.map, c = m.getContainer(), g = this.data.grid;
     const tl = m.unproject([-0.1 * c.clientWidth, -0.1 * c.clientHeight]), br = m.unproject([1.1 * c.clientWidth, 1.1 * c.clientHeight]);
     const mPerPx = ((br.lng - tl.lng) * g.mx) / (1.2 * c.clientWidth);
-    this.data.view({ west: tl.lng, east: br.lng, north: tl.lat, south: br.lat }, mPerPx, this.t);
+    if (!onlyRect) this.data.view({ west: tl.lng, east: br.lng, north: tl.lat, south: br.lat }, mPerPx, this.t);
     this.viewM = [(tl.lng - g.w) * g.mx, (g.n - tl.lat) * g.my, (br.lng - g.w) * g.mx, (g.n - br.lat) * g.my];
   }
   // (re)build the two hour textures when the view, the hour or the loaded tiles change
@@ -329,11 +332,17 @@ export class FlowGL {
     const matrix = args.defaultProjectionData?.mainMatrix || args.modelViewProjectionMatrix;
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.trail[1], 0);
     gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    const c = this.map.getContainer(), m0 = this.map.unproject([0, 0]), m1 = this.map.unproject([c.clientWidth, c.clientHeight]);
+    const mx = (lng) => (lng + 180) / 360, my = (lat) => { const s = Math.sin(lat * Math.PI / 180); return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
+    const rect = [mx(m0.lng), my(m0.lat), mx(m1.lng), my(m1.lat)];   // NW, SE: same orientation as the screen
     if (this.trailRect) {
       P = this.quad; gl.useProgram(P.p);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.trail[0]); gl.uniform1i(P.u.u_tex, 0);
-      gl.uniformMatrix4fv(P.u.u_matrix, false, matrix); gl.uniform4fv(P.u.u_rect, this.trailRect);
-      gl.uniform1f(P.u.u_fade, Math.pow(this.p.trail, 30 * dt));
+      // same view as last frame: a pixel-exact copy. Moved: draw last frame's image where it now belongs.
+      const still = rect.every((v, i) => Math.abs(v - this.trailRect[i]) < 1e-12);
+      gl.uniformMatrix4fv(P.u.u_matrix, false, still ? IDENTITY : matrix); gl.uniform4fv(P.u.u_rect, still ? [-1, 1, 1, -1] : this.trailRect);
+      // shorter tails as the knob goes denser; while the map moves, old trails fade 3× faster so their edges don't linger
+      gl.uniform1f(P.u.u_fade, Math.pow(1 - (1 - this.p.trail) * this.strengthK().tail, 30 * dt * (this.moving ? 3 : 1)));
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -342,15 +351,13 @@ export class FlowGL {
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.state[1]); gl.uniform1i(P.u.u_new, 3);
     this.bindCurrent(P);
     gl.uniform1i(P.u.u_side, this.side); gl.uniformMatrix4fv(P.u.u_matrix, false, matrix);
-    gl.uniform2f(P.u.u_px, W, H); gl.uniform1f(P.u.u_width, this.p.width * devicePixelRatio);
-    gl.uniform1f(P.u.u_opacity, this.p.opacity * Math.pow(2, (this.strength - 0.5) * 1.2));
+    gl.uniform2f(P.u.u_px, W, H); gl.uniform1f(P.u.u_width, this.p.width * devicePixelRatio * this.strengthK().width);
+    gl.uniform1f(P.u.u_opacity, this.p.opacity * this.strengthK().opacity);
     const hex = this.p.colour || '#ffffff'; gl.uniform3f(P.u.u_colour, ...[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255));
     gl.drawArrays(gl.TRIANGLES, 0, this.count * 6);
 
-    // the trail image now covers the current screen: remember where that is (mercator corners)
-    const c = this.map.getContainer(), m0 = this.map.unproject([0, 0]), m1 = this.map.unproject([c.clientWidth, c.clientHeight]);
-    const mx = (lng) => (lng + 180) / 360, my = (lat) => { const s = Math.sin(lat * Math.PI / 180); return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
-    this.trailRect = [mx(m0.lng), my(m0.lat), mx(m1.lng), my(m1.lat)];   // NW, SE: same orientation as the screen
+    // the trail image now covers the current screen: remember where that is
+    this.trailRect = rect;
     this.state.reverse(); this.trail.reverse();
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, prevFb); gl.viewport(...prevVp);
@@ -385,7 +392,12 @@ export class FlowGL {
   setVisible(on) { this.visible = on; if (this.map.getLayer('flow')) this.map.setLayoutProperty('flow', 'visibility', on ? 'visible' : 'none'); this.map.triggerRepaint(); }
   setParams(patch) { Object.assign(this.p, patch); this.map.triggerRepaint(); }
   setStrength(s) { this.strength = s; }
-  strengthK() { return { density: Math.pow(2, (this.strength - 0.5) * 2.4), opacity: Math.pow(2, (this.strength - 0.5) * 1.2) }; }
+  // the viewer's one "Streaks" knob, 0..1 (0.5 = as tuned). Towards 0: fewer streaks, but longer, wider and
+  // bolder, so the water still reads; towards 1: many more, shorter, finer and fainter.
+  strengthK() {
+    const d = this.strength - 0.5;
+    return { density: Math.pow(2, d * 3), opacity: Math.pow(2, -d * 0.8), width: Math.pow(2, -d * 0.8), tail: Math.pow(2, d * 1.6) };
+  }
   start() {} stop() {}
   get parts() { return { length: this.count }; }
   vel(lng, lat) { return this.data.sample(this.t, lng, lat); }

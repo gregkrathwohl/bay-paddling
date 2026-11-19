@@ -124,19 +124,19 @@
     <svg viewBox="0 0 16 16" width="15" height="15"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <div class="flow-pop" id="flow-pop" hidden>
     <label class="row">Map style <select id="set-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
-    <label class="row">Currents <select id="set-currents"><option value="dense">Dense</option><option value="fine">Fine</option></select></label>
     <label class="row">Playback <select id="flow-rate" aria-label="Playback speed">
       <option value="live">Live (real time)</option><option value="0.1">1 h in 10 s</option><option value="0.33" selected>1 h in 3 s</option><option value="1">1 h a second</option></select></label>
-    <label>Streaks <input type="range" id="flow-strength" min="0" max="1" step="0.01" value="0.5"></label>
+    <label>Streaks <span class="pop-ends"><small>Longer</small><input type="range" id="flow-strength" min="0" max="1" step="0.01" value="0.5"><small>Denser</small></span></label>
     <label class="row">Buoys &amp; markers <input type="checkbox" id="set-buoys" role="switch" checked></label>
+    <button class="pop-adv" id="set-advanced" aria-expanded="false">Advanced options</button>
     <div class="pop-link"><small>These settings and the map position are in the page address. Add <code>&amp;screensaver</code> for a clean full-screen view:</small>
       <div class="row"><input id="ss-link" readonly aria-label="Screensaver link"><button id="ss-copy">Copy</button></div></div>
   </div>
   <button id="flow-tune" class="dev-only">Tune</button>
 </div>
 
-<div class="inspector tuner dev-only" id="tuner" hidden>
-  <b>Current streaks</b>
+<div class="inspector tuner" id="tuner" hidden>
+  <div class="tuner-head"><b>Current streaks</b><button id="tuner-close" aria-label="Close">×</button></div>
   <div id="tuner-sliders"></div>
   <div class="row"><button id="tuner-copy">Copy settings</button><button id="tuner-reset">Reset</button></div>
   <pre id="tuner-out" hidden></pre>

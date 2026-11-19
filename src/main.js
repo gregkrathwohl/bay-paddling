@@ -338,12 +338,12 @@ if (flowData) {
   $('flow-toggle').hidden = false;
   // streaks sit above water, ripples and coast, below piers, roads, routes, buoys and every label.
   // No frozen state: shown means moving.
-  const flowKey = 'bay-paddling:flow:v5'; // bump when DEFAULTS change
+  const flowKey = 'bay-paddling:flow:v6'; // bump when DEFAULTS change (stores only the knobs you changed)
   // the lab starts from a dense, dark-blue look (your own tweaks are remembered per browser)
   const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
   // the WebGL renderer (src/flow-gl.js) when the browser can do it; ?canvas forces the original one
   const GL = !Q.has('canvas') && (() => { try { const g = document.createElement('canvas').getContext('webgl2'); return !!(g && g.getExtension('EXT_color_buffer_float')); } catch { return false; } })();
-  const flow = new (GL ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', router: router?.mask ? router : null, params: { ...FLOW_PRESETS[view.currents](view.theme, GL), ...(LAB ? savedFlow : {}) }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
+  const flow = new (GL ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', router: router?.mask ? router : null, params: { ...FLOW_PRESETS[view.currents](view.theme, GL), ...savedFlow }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
   // Now is only useful once you've moved away from now
@@ -473,9 +473,7 @@ if (flowData) {
     theme.value = view.theme; buoys.checked = view.buoys;
     // currents look + its colour for this map style (the lab keeps its own tweaks on top)
     const applyCurrents = () => flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL),
-      ...(LAB ? (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })() : {}) });
-    const cur = $('set-currents'); cur.value = view.currents;
-    cur.addEventListener('change', () => { view.currents = cur.value; writeView(); applyCurrents(); });
+      ...(() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })() });   // your Advanced tweaks, if any
     theme.addEventListener('change', () => { view.theme = theme.value; document.body.classList.toggle('theme-dark', view.theme === 'dark'); writeView(); restyle(); applyCurrents(); });
     const showBuoys = () => { for (const id of ['buoy', 'beacon', 'aton-label']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', view.buoys ? 'visible' : 'none'); };
     buoys.addEventListener('change', () => { view.buoys = buoys.checked; writeView(); showBuoys(); });
@@ -488,6 +486,10 @@ if (flowData) {
     };
     const syncLink = () => { link.value = ssLink(); };
     addEventListener('viewchange', syncLink); map.on('moveend', syncLink); syncLink();
+    // Advanced options: every streak knob (the tuner), remembered in this browser; Reset goes back
+    const adv = $('set-advanced');
+    adv.addEventListener('click', () => { $('tuner').hidden = false; pop.hidden = true; gear.setAttribute('aria-expanded', 'false'); });
+    $('tuner-close').addEventListener('click', () => { $('tuner').hidden = true; });
     gear.addEventListener('click', () => { pop.hidden = !pop.hidden; gear.setAttribute('aria-expanded', String(!pop.hidden)); syncLink(); });
     $('ss-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(ssLink()); $('ss-copy').textContent = 'Copied ✓'; } catch { link.select(); } });
     // full screen = the screensaver view, until Esc
@@ -531,20 +533,21 @@ if (flowData) {
       `<label class="row">Streak colour <input type="color" data-colour value="${flow.p.colour || '#ffffff'}"></label>`;
   };
   render();
-  const persist = () => { try { localStorage.setItem(flowKey, JSON.stringify(flow.p)); } catch {} };
+  const mine = { ...savedFlow };   // only the knobs changed in Advanced options, so presets (e.g. the colour per map style) still apply
+  const persist = (k) => { if (k) mine[k] = flow.p[k]; try { localStorage.setItem(flowKey, JSON.stringify(mine)); } catch {} };
   box.addEventListener('input', (ev) => {
     if ('shade' in ev.target.dataset) {
       const v = +ev.target.value; $('tv-waterShade').textContent = v; savePrefs({ waterShade: v });
       if (map.getLayer('water-shade')) map.setPaintProperty('water-shade', 'fill-opacity', v);
       return;
     }
-    if ('colour' in ev.target.dataset) { flow.setParams({ colour: ev.target.value }); persist(); return; }
+    if ('colour' in ev.target.dataset) { flow.setParams({ colour: ev.target.value }); persist('colour'); return; }
     const k = ev.target.dataset.k; if (!k) return;
-    const v = +ev.target.value; $(`tv-${k}`).textContent = v; flow.setParams({ [k]: v }); persist();
+    const v = +ev.target.value; $(`tv-${k}`).textContent = v; flow.setParams({ [k]: v }); persist(k);
   });
   $('flow-tune').addEventListener('click', () => { $('tuner').hidden = !$('tuner').hidden; });
   $('tuner-reset').addEventListener('click', () => {
-    flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL) }); try { localStorage.removeItem(flowKey); } catch {}
+    flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL) }); for (const k in mine) delete mine[k]; try { localStorage.removeItem(flowKey); } catch {}
     const shade = cfg.defaults?.waterShade ?? 0; savePrefs({ waterShade: shade });
     if (map.getLayer('water-shade')) map.setPaintProperty('water-shade', 'fill-opacity', shade);
     render();
