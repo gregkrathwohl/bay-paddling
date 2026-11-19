@@ -128,7 +128,8 @@ $('hillshade').checked = state.hillshade;
 const handNamesOf = () => labels.flatMap(l => [l.text.replace(/\n/g, ' '), ...(l.replaces ? [l.replaces] : [])]);
 let handNames = handNamesOf();
 const style = () => buildBayStyle({ osm, mask, currents, routes, aton, coastLines,
-  ripples, trips: state.trip, waterMode: state.waterMode, waterShade: prefs.waterShade,
+  // the water tone is tuned for the light map; on the dark one a little goes a long way
+  ripples, trips: state.trip, waterMode: state.waterMode, waterShade: view.theme === 'dark' ? Math.min(prefs.waterShade, 0.15) : prefs.waterShade,
   contourTiles: contourTiles(state.mode), mode: state.mode, designZoom, hillshade: state.hillshade, handNames, theme: view.theme,
   landTiles: cfg.style === 'bay-tiles' });
 
@@ -340,8 +341,9 @@ if (flowData) {
   const flowKey = 'bay-paddling:flow:v5'; // bump when DEFAULTS change
   // the lab starts from a dense, dark-blue look (your own tweaks are remembered per browser)
   const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
-  // ?gl: the experimental WebGL renderer (src/flow-gl.js)
-  const flow = new (Q.has('gl') ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', params: { ...FLOW_PRESETS[view.currents](view.theme), ...(LAB ? savedFlow : {}) }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
+  // the WebGL renderer (src/flow-gl.js) when the browser can do it; ?canvas forces the original one
+  const GL = !Q.has('canvas') && (() => { try { const g = document.createElement('canvas').getContext('webgl2'); return !!(g && g.getExtension('EXT_color_buffer_float')); } catch { return false; } })();
+  const flow = new (GL ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', router: router?.mask ? router : null, params: { ...FLOW_PRESETS[view.currents](view.theme, GL), ...(LAB ? savedFlow : {}) }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
   // Now is only useful once you've moved away from now
@@ -470,7 +472,7 @@ if (flowData) {
     const theme = $('set-theme'), buoys = $('set-buoys');
     theme.value = view.theme; buoys.checked = view.buoys;
     // currents look + its colour for this map style (the lab keeps its own tweaks on top)
-    const applyCurrents = () => flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme),
+    const applyCurrents = () => flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL),
       ...(LAB ? (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })() : {}) });
     const cur = $('set-currents'); cur.value = view.currents;
     cur.addEventListener('change', () => { view.currents = cur.value; writeView(); applyCurrents(); });
@@ -508,7 +510,7 @@ if (flowData) {
 
   // --- tuning panel: every streak knob live; "Copy settings" gives values to hard-code
   const SLIDERS = [
-    ['density', 'Density', 0.2, Q.has('gl') ? 1500 : 30, Q.has('gl') ? 1 : 0.1], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
+    ['density', 'Density', 0.2, GL ? 1500 : 30, GL ? 1 : 0.1], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
     ['zoomOutSpeed', 'Keep moving when zoomed out', 0, 1, 0.05],
     ['speed', 'Speed', 50, 1200, 10], ['zoomEase', 'Calm when zoomed in', 0, 1, 0.05],
     ['compress', 'Slow-water boost (lower = more)', 0.2, 1, 0.05], ['trail', 'Trail length', 0.8, 0.995, 0.005],
@@ -542,7 +544,7 @@ if (flowData) {
   });
   $('flow-tune').addEventListener('click', () => { $('tuner').hidden = !$('tuner').hidden; });
   $('tuner-reset').addEventListener('click', () => {
-    flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme) }); try { localStorage.removeItem(flowKey); } catch {}
+    flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL) }); try { localStorage.removeItem(flowKey); } catch {}
     const shade = cfg.defaults?.waterShade ?? 0; savePrefs({ waterShade: shade });
     if (map.getLayer('water-shade')) map.setPaintProperty('water-shade', 'fill-opacity', shade);
     render();
@@ -558,14 +560,14 @@ if (flowData) {
     const info = document.createElement('div'); info.className = 'lab-info'; $('tuner').prepend(info);
     // one click between the two renderers (reloads with or without ?gl, same view)
     const sw = document.createElement('button'); sw.className = 'lab-switch';
-    sw.textContent = Q.has('gl') ? 'Switch to Canvas renderer' : 'Switch to WebGL renderer';
-    sw.addEventListener('click', () => { const q = new URLSearchParams(location.search); q.has('gl') ? q.delete('gl') : q.set('gl', '');
+    sw.textContent = GL ? 'Switch to Canvas renderer' : 'Switch to WebGL renderer';
+    sw.addEventListener('click', () => { const q = new URLSearchParams(location.search); q.delete('gl'); GL ? q.set('canvas', '') : q.delete('canvas');
       location.search = q.toString().replace(/=(&|$)/g, '$1'); });
     info.after(sw);
     let last = performance.now(), frames = 0;
     const count = () => { frames++; requestAnimationFrame(count); }; requestAnimationFrame(count);
     setInterval(() => { const now = performance.now(), fps = Math.round(frames * 1000 / (now - last)); frames = 0; last = now;
-      info.textContent = `${Q.has('gl') ? 'WebGL' : 'Canvas'} · ${flow.parts.length.toLocaleString()} streaks · ${flow.fps ?? fps} fps`; }, 1000);
+      info.textContent = `${GL ? 'WebGL' : 'Canvas'} · ${flow.parts.length.toLocaleString()} streaks · ${flow.fps ?? fps} fps`; }, 1000);
   }
   window.flow = flow;
 }

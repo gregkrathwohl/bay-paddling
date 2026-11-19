@@ -269,4 +269,14 @@ export class TileRouter {
     return [a, ...this.tighten(F, this.pull(F, fine)).map(c => this.toLL(F, c)), b];
   }
   resetVisited() {}
+
+  // for the WebGL streaks: water (255) / land (0) for a block of tiles at level z, one byte per cell
+  mask(z, tx0, ty0, ntx, nty) {
+    const L = this.levels[z], T = this.T, W = ntx * T, out = new Uint8Array(W * nty * T);
+    for (let j = 0; j < nty; j++) for (let i = 0; i < ntx; i++) {
+      const t = L.tiles.get((ty0 + j) * 64 + tx0 + i); if (!t) continue;
+      for (let y = 0; y < T; y++) { const o = (j * T + y) * W + i * T, k = y * T; for (let x = 0; x < T; x++) out[o + x] = t[k + x] ? 255 : 0; }
+    }
+    return { data: out, width: W, height: nty * T, cell: L.cell };
+  }
 }

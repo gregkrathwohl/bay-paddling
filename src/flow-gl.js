@@ -29,6 +29,18 @@ const MERC = `
     return vec2((lng + 180.0) / 360.0, 0.5 - log((1.0 + s) / (1.0 - s)) / (4.0 * 3.14159265));
   }`;
 
+const LAND = `
+  // our own coastline (12 m route grid): 1 = water, 0 = land. Without it (u_hasLand = 0) all is water.
+  uniform sampler2D u_land;
+  uniform vec4 u_landRect;      // origin x, y and size w, h, in metres
+  uniform float u_hasLand;
+  float water(vec2 m) {
+    if (u_hasLand < 0.5) return 1.0;
+    vec2 uv = (m - u_landRect.xy) / u_landRect.zw;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+    return texture(u_land, uv).r;
+  }`;
+
 const CURRENT = `
   // the current at a point (metres), mixed between hour t0 and t1. .xy = m/s east/north, .z = water
   uniform sampler2D u_cur0, u_cur1;
@@ -50,6 +62,7 @@ const UPDATE_FS = `#version 300 es
   uniform float u_step, u_compress, u_life, u_calm, u_dage;   // u_dage: age gained this frame (1 = one 30 fps frame)
   uniform uint u_frame;
   ${CURRENT}
+  ${LAND}
   out vec4 o;
   // random numbers: a PCG integer hash, seeded per particle and per frame. (The common
   // fract(sin(dot(...))) one-liner is correlated between neighbouring pixels and drops new particles
@@ -63,7 +76,7 @@ const UPDATE_FS = `#version 300 es
       vec2 m = mix(u_view.xy, u_view.zw, vec2(rand(), rand()));
       vec3 c = current(m);
       float keep = u_calm + (1.0 - u_calm) * min(1.0, length(c.xy) / 0.35);
-      if (c.z > 0.5 && rand() < keep) {
+      if (c.z > 0.5 && water(m) > 0.5 && rand() < keep) {
         float life = u_life * (0.65 + 0.7 * rand());
         return vec4(m, -rand() * life, life);   // negative age = staggered start (no fade-in wave)
       }
@@ -75,7 +88,7 @@ const UPDATE_FS = `#version 300 es
     rng = pcg(uint(gl_FragCoord.x) + pcg(uint(gl_FragCoord.y) + pcg(u_frame)));
     vec3 c = current(p.xy);
     bool outside = any(lessThan(p.xy, u_view.xy)) || any(greaterThan(p.xy, u_view.zw));
-    if (p.z > p.w || c.z < 0.5 || outside) { o = spawn(); return; }
+    if (p.z > p.w || c.z < 0.5 || outside || water(p.xy) < 0.5) { o = spawn(); return; }
     // visual speed ∝ speed^compress (slow water still drifts visibly), north is −y
     float sp = length(c.xy);
     float vis = sp > 1e-4 ? 1.2 * pow(sp / 1.2, u_compress) / sp : 0.0;
@@ -93,6 +106,7 @@ const DRAW_VS = `#version 300 es
   ${MERC}
   ${CURRENT}
   out float v_alpha;
+  out vec2 v_m;                 // metres, for clipping at the shore
   void main() {
     int id = gl_VertexID / 6, corner = gl_VertexID % 6;
     ivec2 t = ivec2(id % u_side, id / u_side);
@@ -109,16 +123,23 @@ const DRAW_VS = `#version 300 es
     bool atB = corner == 2 || corner == 3 || corner == 5;
     bool plus = corner == 1 || corner == 4 || corner == 5;
     vec2 s = (atB ? sb : sa) + (plus ? n : -n);
+    v_m = atB ? b.xy : a.xy;
     gl_Position = vec4(s / (u_px * 0.5) * (atB ? pb.w : pa.w), 0, atB ? pb.w : pa.w);
     float life = min(1.0, min(b.z / 8.0, (b.w - b.z) / 8.0));
     v_alpha = clamp(life * (0.65 + 0.35 * strength) * u_opacity, 0.0, 1.0);
   }`;
 const DRAW_FS = `#version 300 es
-  precision mediump float;
+  precision highp float;
   uniform vec3 u_colour;
+  ${LAND}
   in float v_alpha;
+  in vec2 v_m;
   out vec4 o;
-  void main() { o = vec4(u_colour * v_alpha, v_alpha); }   // premultiplied alpha
+  void main() {
+    float w = water(v_m);
+    if (w < 0.5) discard;                                  // never draw over land
+    o = vec4(u_colour * v_alpha, v_alpha);                 // premultiplied alpha
+  }
   `;
 
 // ---- 3b / 4. a textured quad: the previous trails (faded, at their old place) or the final composite
@@ -152,8 +173,8 @@ function program(gl, vs, fs) {
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 export class FlowGL {
-  constructor(map, data, { onTime, beforeId, params } = {}) {
-    Object.assign(this, { map, data, onTime, beforeId });
+  constructor(map, data, { onTime, beforeId, params, router } = {}) {
+    Object.assign(this, { map, data, onTime, beforeId, router });
     this.p = { ...DEFAULTS, ...(params || {}) };
     this.t = this.nowIndex();
     this.visible = true;
@@ -181,6 +202,7 @@ export class FlowGL {
     this.vao = gl.createVertexArray();
     this.fb = gl.createFramebuffer();
     this.cur = [gl.createTexture(), gl.createTexture()];
+    this.land = gl.createTexture(); this.landKey = null;
     this.curKey = [null, null];
     this.state = [null, null]; this.trail = [null, null]; this.trailRect = null; this.side = 0; this.trailW = 0;
   }
@@ -198,7 +220,9 @@ export class FlowGL {
   wantCount() {
     const c = this.map.getContainer(), z = this.map.getZoom();
     const thin = z < 13.5 ? Math.pow(2, (z - 13.5) * this.p.zoomedOut) : 1, k = Math.pow(2, (this.strength - 0.5) * 2.4);
-    return Math.max(1, Math.round(((c.clientWidth * c.clientHeight) / 1000) * this.p.density * thin * k));
+    // phones get at most 200k (their GPUs and batteries); big screens at most 1.5 million
+    const cap = innerWidth <= 700 ? 2e5 : 1.5e6;
+    return Math.max(1, Math.min(cap, Math.round(((c.clientWidth * c.clientHeight) / 1000) * this.p.density * thin * k)));
   }
   ensureState() {
     const gl = this.gl, n = this.wantCount(), side = Math.ceil(Math.sqrt(n));
@@ -241,6 +265,23 @@ export class FlowGL {
       this.curKey[k] = mo.complete ? key : null;   // incomplete: rebuild when more tiles arrive
     });
     this.mosaicM = [tx0 * tsz, ty0 * tsz, (tx1 - tx0 + 1) * tsz, (ty1 - ty0 + 1) * tsz];
+    // the land mask for the view: 12 m cells when zoomed in, 48 m across the whole Bay
+    const R = this.router;
+    if (R?.loaded) {
+      const lz = (x1 - x0) < 25000 ? R.meta.fine : R.meta.coarse, lcell = R.levels[lz].cell, ltsz = R.T * lcell, ln = 1 << lz;
+      const lx0 = Math.max(0, Math.floor(x0 / ltsz)), ly0 = Math.max(0, Math.floor(y0 / ltsz));
+      const lx1 = Math.min(ln - 1, Math.floor(x1 / ltsz)), ly1 = Math.min(ln - 1, Math.floor(y1 / ltsz));
+      const lkey = `${lz}/${lx0}/${ly0}/${lx1}/${ly1}`;
+      if (lkey !== this.landKey) {
+        const mk = R.mask(lz, lx0, ly0, lx1 - lx0 + 1, ly1 - ly0 + 1);
+        gl.bindTexture(gl.TEXTURE_2D, this.land);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, mk.width, mk.height, 0, gl.RED, gl.UNSIGNED_BYTE, mk.data);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        this.landKey = lkey; this.landRect = [lx0 * ltsz, ly0 * ltsz, (lx1 - lx0 + 1) * ltsz, (ly1 - ly0 + 1) * ltsz];
+      }
+    }
     this.retry = performance.now();
   }
   bindCurrent(prog) {
@@ -251,6 +292,10 @@ export class FlowGL {
     gl.uniform4fv(prog.u.u_mosaic, this.mosaicM);
     gl.uniform1f(prog.u.u_ft, this.t - Math.floor(this.t));
     if (prog.u.u_grid) gl.uniform4f(prog.u.u_grid, g.w, g.n, g.mx, g.my);
+    if (prog.u.u_land) {
+      gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, this.land); gl.uniform1i(prog.u.u_land, 4);
+      gl.uniform4fv(prog.u.u_landRect, this.landRect || [0, 0, 1, 1]); gl.uniform1f(prog.u.u_hasLand, this.landKey ? 1 : 0);
+    }
   }
 
   // ---- every frame, before MapLibre draws: move particles, fade + extend the trails (off screen)
@@ -262,6 +307,7 @@ export class FlowGL {
     const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, z = this.map.getZoom();
     this.ensureState(); this.ensureTrails(W, H);
     // rebuild the hour textures when the view or hour changed, or (every 0.3 s) while tiles are still arriving
+    if (!this.landKey && this.router?.loaded) this.curKey = [null, null];   // the coastline just arrived
     if (!this.curKey.includes(null) || !this.retry || performance.now() - this.retry > 300) this.refreshCurrents();
     gl.bindVertexArray(this.vao);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE);

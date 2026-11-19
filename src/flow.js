@@ -27,11 +27,12 @@ export const DEFAULTS = {
   calm: 0.3,        // share of streaks kept in slack water (1 = as many as in the channels)
 };
 
-// the viewer's "Currents" setting: Fine = the sparse white wind-map look above; Dense = many slow,
-// translucent streaks that read as moving water (tuned by Greg 2026-11-19). Colour follows the map style.
+// the viewer's "Currents" setting: Fine = the sparse white wind-map look above; Dense = a GPU's worth
+// of thin, slow streaks that read as moving water (tuned by Greg in the WebGL lab, 2026-11-19).
+// Colour follows the map style. The canvas renderer (no WebGL) gets a density it can afford.
 export const PRESETS = {
   fine: () => ({}),
-  dense: (theme) => ({ density: 25.5, zoomedOut: 0.1, speed: 220, trail: 0.925, width: 0.7, calm: 0.6,
+  dense: (theme, gl = true) => ({ density: gl ? 754 : 25.5, zoomedOut: 0.2, speed: 120, trail: 0.92, width: gl ? 0.3 : 0.7, calm: 0.8,
     ...(theme === 'dark' ? { colour: '#a9d3f0', opacity: 0.35 } : { colour: '#1f4f7a', opacity: 0.45 }) }),
 };
 
