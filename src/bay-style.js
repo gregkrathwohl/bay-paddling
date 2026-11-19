@@ -60,9 +60,13 @@ export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPale
     { id: 'developed', type: 'fill', source: 'osm',
       filter: ['match', ['coalesce', ['get', 'landuse'], ''], ['residential', 'commercial', 'industrial', 'retail'], true, false],
       paint: { 'fill-color': c.land } },
+    // the trail maps' Google-like relief (combined method, low NW sun), toned down: the land stays background
     ...(hillshade ? [{ id: 'hillshade', type: 'hillshade', source: 'dem',
-      paint: { 'hillshade-method': 'multidirectional', 'hillshade-exaggeration': 0.3,
-        'hillshade-shadow-color': '#6b6a5e', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#8a8a7a' } }] : []),
+      paint: { 'hillshade-method': 'combined', 'hillshade-exaggeration': 0.5,
+        'hillshade-illumination-direction': 315, 'hillshade-illumination-altitude': 38,
+        ...(theme === 'dark'
+          ? { 'hillshade-shadow-color': '#05080a', 'hillshade-highlight-color': 'rgba(170,200,210,0.16)', 'hillshade-accent-color': '#0c1114' }
+          : { 'hillshade-shadow-color': '#56645b', 'hillshade-highlight-color': 'rgba(255,255,250,0.55)', 'hillshade-accent-color': '#6d786f' }) } }] : []),
     { id: 'land-contour', type: 'line', source: 'contours', 'source-layer': 'contours', minzoom: minz(12),
       filter: ['>', ['get', 'ele'], 0],
       paint: { 'line-color': '#d9c7aa', 'line-width': W(0.4), 'line-opacity': 0.6 } },

@@ -28,7 +28,7 @@
     "mode": "web",
     "currents": true,
     "waterShade": 0.1,
-    "hillshade": false,
+    "hillshade": true,
     "waterMode": "ripples",
     "colour": false
   },
