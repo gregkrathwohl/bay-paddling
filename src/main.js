@@ -7,7 +7,7 @@ import { addImages } from './patterns.js';
 import { LabelLayer, STYLES } from './labels.js';
 import { Router } from './router.js';
 import { resolver, buildTrip, summary, fmtDist, UNITS } from './trips.js';
-import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
+import { FlowLayer, loadFrames, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
 
 window.maplibregl = maplibregl;
 const place = new URLSearchParams(location.search).get('place') || 'richardson-bay';
@@ -16,7 +16,7 @@ const empty = { type: 'FeatureCollection', features: [] };
 const optional = (url) => fetch(url).then(r => (r.ok ? r.json() : empty)).catch(() => empty);
 const [cfg, osm, labels, currents, routes, aton, coastLines, ripples, trips] = await Promise.all([
   fetch(`${base}/place.json`).then(r => r.json()),
-  fetch(`${base}/data/osm.geojson`).then(r => r.json()),
+  optional(`${base}/data/osm.geojson`),   // big areas draw the land from OpenFreeMap tiles instead
   fetch(`${base}/labels.json`).then(r => (r.ok ? r.json() : [])),
   optional(`${base}/data/currents.geojson`),
   optional(`${base}/data/routes.geojson`),
@@ -102,7 +102,8 @@ const handNamesOf = () => labels.flatMap(l => [l.text.replace(/\n/g, ' '), ...(l
 let handNames = handNamesOf();
 const style = () => buildBayStyle({ osm, mask, currents, routes, aton, coastLines,
   ripples, trips: state.trip, waterMode: state.waterMode, waterShade: prefs.waterShade,
-  contourTiles: contourTiles(state.mode), mode: state.mode, designZoom, hillshade: state.hillshade, handNames });
+  contourTiles: contourTiles(state.mode), mode: state.mode, designZoom, hillshade: state.hillshade, handNames,
+  landTiles: cfg.style === 'bay-tiles' });
 
 // the editor sidebar is open by default in dev; collapsing it is a per-browser convenience
 const edKey = 'bay-paddling:editor-collapsed';
@@ -248,7 +249,7 @@ let sel = null;              // 'plan' while creating a route
 let plan = [];
 const planning = () => sel === 'plan';
 const refresh = () => {
-  card.hidden = false;
+  card.hidden = !router;   // no routing grid for this area (yet)
   $('rt-idle').hidden = planning(); $('rt-plan').hidden = !planning();
   document.body.classList.toggle('planning', planning());
   if (!planning()) { showTrip({ geojson: empty }); return; }
@@ -298,7 +299,9 @@ const redrawGridSoon = () => { if (gridOn.checked) setTimeout(drawGrid, 50); };
 map.on('click', redrawGridSoon);
 
 // --- NOAA SFBOFS currents: pale moving streaks, time slider
-const flowData = await fetch(`${base}/data/currents-sfbofs.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+// hourly images (big areas) or one JSON file (Richardson Bay)
+const flowData = await loadFrames(`${base}/data/currents`)
+  || await fetch(`${base}/data/currents-sfbofs.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
 if (flowData) {
   const slider = $('flow-time'), label = $('flow-label'), onBox = $('flow-on'), colourBox = $('flow-colour');
   $('flow-toggle').hidden = false;
@@ -309,6 +312,8 @@ if (flowData) {
   const flow = new FlowLayer(map, flowData, { beforeId: 'road', speedBeforeId: 'depth', params: savedFlow, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
+  // a colour-by-speed image waits for its hour to arrive
+  flowData.onLoad = (t) => { if (flow.colour && Math.abs(t - flow.t) < 1) flow.setTime(flow.t); };
   // Now is only useful once you've moved away from now
   const nowBtn = $('flow-now'), nowI = flow.nowIndex();
   const syncNow = () => { nowBtn.disabled = Math.abs(+slider.value - nowI) < 0.5; };

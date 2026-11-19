@@ -1,0 +1,35 @@
+{
+  "name": "San Francisco Bay",
+  "title": "San Francisco Bay",
+  "subtitle": "Paddling Guide",
+  "org": "Tidal currents · NOAA SFBOFS",
+  "style": "bay-tiles",
+  "bbox": [
+    -122.66,
+    37.42,
+    -121.96,
+    38.16
+  ],
+  "center": [
+    -122.36,
+    37.8
+  ],
+  "zoom": 10.4,
+  "areas": [],
+  "currents": {
+    "cell": 50,
+    "max": 4
+  },
+  "tides": {
+    "station": "9414290",
+    "name": "San Francisco (Golden Gate)"
+  },
+  "defaults": {
+    "mode": "web",
+    "currents": true,
+    "waterShade": 0.1,
+    "hillshade": false,
+    "waterMode": "ripples",
+    "colour": false
+  }
+}

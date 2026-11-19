@@ -4,3 +4,4 @@ dist/
 .deploy/
 places/*/data/currents-sfbofs.json
 places/*/data/tides.json
+places/*/data/currents/

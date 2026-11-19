@@ -24,3 +24,15 @@ animated over the tide curve. Split out of trail-cartography (2026-11-18); no sh
 
 Streams ~54 hourly model files (~57 MB each) from NOAA's open-data bucket, keeps the surface layer
 inside the bbox on a 100 m grid, deletes each file. src/flow.js animates it.
+
+### Whole Bay (places/sf-bay): currents as hourly images
+
+    .venv/bin/pip install numpy netCDF4 scipy matplotlib pillow
+    .venv/bin/python scripts/fetch-currents.py sf-bay    # → data/currents/000.png … + index.json
+    node scripts/fetch-tides.mjs sf-bay
+
+One RGB PNG per hour, one pixel per 50 m cell, north up: R = east-west flow, G = north-south flow
+(square-root companded around 128, max 4 m/s), B = water (from the model's own mesh). ~400 KB/hour;
+the map loads only the hours around the slider. Land comes from OpenFreeMap tiles (style "bay-tiles"),
+no OSM download and no route planner yet. The Richardson-only version is tagged richardson-v1
+(checked out at ../bay-paddling-richardson, port 5192).

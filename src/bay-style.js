@@ -22,7 +22,7 @@ export const bayPalette = {
   outside: '#ece9e1',
 };
 
-export function buildBayStyle({ c = bayPalette, osm, mask, currents, routes, aton, coastLines, ripples, trips, waterMode = 'ripples', waterShade = 0.1, contourTiles, mode = 'web', designZoom = 13.6, hillshade = false, handNames = [] }) {
+export function buildBayStyle({ c = bayPalette, osm, mask, currents, routes, aton, coastLines, ripples, trips, waterMode = 'ripples', waterShade = 0.1, contourTiles, mode = 'web', designZoom = 13.6, hillshade = false, handNames = [], landTiles = false }) {
   const paper = mode === 'paper';
   const W = (base, k = null) => {
     const v = (x) => (k ? ['*', k, x] : x);
@@ -165,6 +165,31 @@ export function buildBayStyle({ c = bayPalette, osm, mask, currents, routes, ato
       layout: { 'text-field': ['get', 'name'], 'text-font': FONT.regular, 'text-size': T(10) },
       paint: { 'text-color': c.inkSoft } },
   ];
+
+  // big areas (the whole Bay): the land comes from OpenFreeMap's vector tiles instead of a downloaded
+  // OSM extract. It's the background here, so only parks, the shoreline, main roads and place names.
+  if (landTiles) {
+    const i = (id) => layers.findIndex(l => l.id === id);
+    const ofm = (l) => ({ source: 'ofm', ...l });
+    layers.splice(i('park'), 1, ofm({ id: 'park', type: 'fill', 'source-layer': 'park', paint: { 'fill-color': c.park } }));
+    layers.splice(i('coast'), 1, ofm({ id: 'coast', type: 'line', 'source-layer': 'water',
+      filter: ['match', ['get', 'class'], ['ocean', 'lake', 'river'], true, false],
+      paint: { 'line-color': c.coast, 'line-width': W(0.9), 'line-opacity': 0.8 } }));
+    const cls = (...v) => ['match', ['get', 'class'], v, true, false];
+    layers.splice(i('road'), 1, ofm({ id: 'road', type: 'line', 'source-layer': 'transportation', minzoom: 12,
+      filter: cls('secondary', 'tertiary', 'minor'), paint: { 'line-color': c.road, 'line-width': W(0.55), 'line-opacity': 0.7 } }));
+    layers.splice(i('road-major'), 1, ofm({ id: 'road-major', type: 'line', 'source-layer': 'transportation',
+      filter: cls('motorway', 'trunk', 'primary'), paint: { 'line-color': c.roadMajor, 'line-width': W(1.1) } }));
+    layers.push(
+      ofm({ id: 'place-label', type: 'symbol', 'source-layer': 'place',
+        filter: ['all', cls('city', 'town', 'village', 'suburb'), notHand],
+        layout: { 'text-field': ['get', 'name'], 'text-font': FONT.regular, 'text-transform': 'uppercase', 'text-letter-spacing': 0.12,
+          'text-size': ['match', ['get', 'class'], 'city', 12, 'town', 10.5, 9.5] },
+        paint: { 'text-color': c.inkSoft, 'text-halo-color': 'rgba(247,244,236,0.9)', 'text-halo-width': 1.2 } }),
+      ofm({ id: 'water-label', type: 'symbol', 'source-layer': 'water_name', filter: notHand,
+        layout: { 'text-field': ['get', 'name'], 'text-font': FONT.italic, 'text-size': 12, 'text-letter-spacing': 0.1, 'text-max-width': 6 },
+        paint: { 'text-color': c.waterInk, 'text-halo-color': 'rgba(205,228,236,0.8)', 'text-halo-width': 1 } }));
+  }
 
   return {
     version: 8,

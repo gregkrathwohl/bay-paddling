@@ -27,6 +27,43 @@ export const DEFAULTS = {
   life: 80,         // average particle life in frames (too long and particles bunch into 'tide lines')
 };
 
+// Big areas: one RGB image per hour (scripts/fetch-currents.py), R = east-west, G = north-south
+// (square-root companded), B = water. Only the hours around the one you're looking at are kept
+// in memory; the rest load on demand as the time slider moves.
+export async function loadFrames(dir) {
+  const meta = await fetch(`${dir}/index.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  if (!meta) return null;
+  const n = meta.nx * meta.ny, max = meta.encoding.max;
+  const lut = new Int16Array(256);   // byte → mm/s
+  for (let b = 0; b < 256; b++) { const f = (b - 128) / 127; lut[b] = Math.round(Math.sign(f) * f * f * max * 1000); }
+  const d = { ...meta, scale: 1000, u: [], v: [], mask: null, pending: {} };
+  d.load = (t) => {
+    if (d.u[t] || d.pending[t]) return d.pending[t];
+    return (d.pending[t] = (async () => {
+      const blob = await fetch(`${dir}/${meta.frames[t]}`).then(r => r.blob());
+      const img = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+      const ctx = new OffscreenCanvas(meta.nx, meta.ny).getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      const px = ctx.getImageData(0, 0, meta.nx, meta.ny).data;
+      const u = new Int16Array(n), v = new Int16Array(n);
+      if (!d.mask) { d.mask = new Uint8Array(n); for (let i = 0; i < n; i++) d.mask[i] = px[i * 4 + 2] > 127; }
+      for (let i = 0; i < n; i++) { u[i] = lut[px[i * 4]]; v[i] = lut[px[i * 4 + 1]]; }
+      d.u[t] = u; d.v[t] = v; delete d.pending[t];
+      d.onLoad?.(t);
+    })());
+  };
+  // keep the frames around time t (and prefetch the next ones); drop the rest
+  d.need = (t) => {
+    const t0 = Math.floor(t);
+    for (let k = t0 - 1; k <= t0 + 2; k++) if (k >= 0 && k < meta.times.length) d.load(k);
+    d.u.forEach((_, k) => { if (Math.abs(k - t) > 4) { delete d.u[k]; delete d.v[k]; } });
+  };
+  const now = Date.now(), ts = meta.times.map(Date.parse);
+  const i = ts.reduce((b, x, k) => (Math.abs(x - now) < Math.abs(ts[b] - now) ? k : b), 0);
+  await Promise.all([d.load(i), i + 1 < ts.length && d.load(i + 1)]);
+  return d;
+}
+
 export class FlowLayer {
   constructor(map, data, { onTime, beforeId, speedBeforeId, isWater, params } = {}) {
     Object.assign(this, { map, data, onTime, beforeId, speedBeforeId, isWater });
@@ -117,19 +154,24 @@ export class FlowLayer {
     const d = this.data, gx = ((lng - this.gw) * this.gmx) / d.cell - 0.5, gy = ((this.gn - lat) * 110540) / d.cell - 0.5;
     const x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
     const t0 = Math.floor(this.t), t1 = Math.min(d.times.length - 1, t0 + 1), ft = this.t - t0;
+    if (!d.mask) return null;
+    let U0 = d.u[t0], U1 = d.u[t1], V0 = d.v[t0], V1 = d.v[t1];
+    if (!U0 && !U1) return null;            // hour still loading
+    if (!U0) { U0 = U1; V0 = V1; } else if (!U1) { U1 = U0; V1 = V0; }
     let u = 0, v = 0, ws = 0;
     for (const [cx, cy, wt] of [[x0, y0, (1 - fx) * (1 - fy)], [x0 + 1, y0, fx * (1 - fy)], [x0, y0 + 1, (1 - fx) * fy], [x0 + 1, y0 + 1, fx * fy]]) {
       if (cx < 0 || cy < 0 || cx >= d.nx || cy >= d.ny) continue;
       const i = cy * d.nx + cx;
       if (!d.mask[i]) continue;
-      u += wt * (d.u[t0][i] * (1 - ft) + d.u[t1][i] * ft);
-      v += wt * (d.v[t0][i] * (1 - ft) + d.v[t1][i] * ft);
+      u += wt * (U0[i] * (1 - ft) + U1[i] * ft);
+      v += wt * (V0[i] * (1 - ft) + V1[i] * ft);
       ws += wt;
     }
     if (ws < 0.3) return null;
     // exact water mask from our own coastline grid: streaks never cross land
     if (this.isWater && !this.isWater(lng, lat)) return null;
-    return [u / ws / 100, v / ws / 100];
+    const k = d.scale || 100;
+    return [u / ws / k, v / ws / k];
   }
 
   spawn(randomAge = false) {
@@ -190,6 +232,7 @@ export class FlowLayer {
   stop() { this.running = false; cancelAnimationFrame(this.raf); }
   setTime(t) {
     this.t = t; this.onTime?.(t);
+    this.data.need?.(t);
     if (this.colour) { clearTimeout(this.sT); this.sT = setTimeout(() => this.map.getSource('flow-speed')?.updateImage({ url: this.speedImage(), coordinates: this.gridCoords() }), 30); }
   }
   setColour(on) {
@@ -211,11 +254,13 @@ export class FlowLayer {
     const d = this.data, c = document.createElement('canvas'); c.width = d.nx; c.height = d.ny;
     const ctx = c.getContext('2d'), img = ctx.createImageData(d.nx, d.ny);
     const t0 = Math.floor(this.t), t1 = Math.min(d.times.length - 1, t0 + 1), ft = this.t - t0;
+    const U0 = d.u[t0] || d.u[t1], U1 = d.u[t1] || d.u[t0], V0 = d.v[t0] || d.v[t1], V1 = d.v[t1] || d.v[t0], k = d.scale || 100;
+    if (!U0 || !d.mask) { ctx.putImageData(img, 0, 0); return c.toDataURL(); }
     for (let y = 0; y < d.ny; y++) for (let x = 0; x < d.nx; x++) {
       const i = y * d.nx + x;
       const lng = this.gw + ((x + 0.5) * d.cell) / this.gmx, lat = this.gn - ((y + 0.5) * d.cell) / 110540;
       if (!d.mask[i] || (this.isWater && !this.isWater(lng, lat))) continue;
-      const u = (d.u[t0][i] * (1 - ft) + d.u[t1][i] * ft) / 100, v = (d.v[t0][i] * (1 - ft) + d.v[t1][i] * ft) / 100;
+      const u = (U0[i] * (1 - ft) + U1[i] * ft) / k, v = (V0[i] * (1 - ft) + V1[i] * ft) / k;
       const col = this.rampColour(Math.hypot(u, v));
       img.data.set([col[0], col[1], col[2], 255], i * 4);
     }
