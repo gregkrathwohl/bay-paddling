@@ -1,4 +1,4 @@
-// What's under the cursor: current speed and direction, water depth, and a buoy's full name.
+// What's under the cursor: current speed (the streaks already show direction), water depth, and a buoy's full name.
 // A small card follows the pointer (mouse and trackpad only; touch has no hover).
 //
 // Depth comes from the same AWS Terrain Tiles (Terrarium) the depth tint is drawn from: we fetch the
@@ -6,7 +6,6 @@
 
 const DEM = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
 const Z = 12, KN = 1.94384, FT = 3.28084;
-const POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 
 const tiles = new Map();   // "x/y" → Float32Array (metres) | Promise | null
 function demTile(x, y) {
@@ -54,8 +53,7 @@ export function hoverInfo(map, { flow, isWater, buoyLayers = ['buoy', 'beacon', 
     if (water && flow?.visible !== false) {
       const v = flow?.data.sample(flow.t, lng, lat);
       if (v) {
-        const sp = Math.hypot(v[0], v[1]) * KN, dir = (Math.atan2(v[0], v[1]) * 180 / Math.PI + 360) % 360;
-        rows.push(sp < 0.05 ? 'Current: slack' : `Current <b>${sp.toFixed(1)} kn</b> toward ${POINTS[Math.round(dir / 22.5) % 16]}`);
+        rows.push(`Current <b>${(Math.hypot(v[0], v[1]) * KN).toFixed(1)} kn</b>`);
       }
     }
     if (water) {

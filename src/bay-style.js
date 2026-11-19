@@ -7,7 +7,7 @@ const FONT = { regular: ['Noto Sans Regular'], italic: ['Noto Sans Italic'], bol
 export const bayPalette = {
   land: '#f7f4ec',
   park: '#dde3d4',
-  water: '#cde4ec',
+  water: '#a3cbe2',
   coast: '#4d86ad',
   waterline: '#5f97bd',
   isobath: '#7fb0cf',
@@ -71,7 +71,8 @@ export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPale
     { id: 'water', type: 'fill', source: 'ofm', 'source-layer': 'water', paint: { 'fill-color': c.water } },
     { id: 'depth', type: 'color-relief', source: 'dem',
       paint: { 'color-relief-opacity': 0.9, 'color-relief-color': ['interpolate', ['linear'], ['elevation'],
-        -80, '#5f9cc4', -40, '#7fb1d3', -20, '#9cc5df', -8, '#b3d3e5', -2, '#c6dfea', -0.3, 'rgba(205,228,236,0)', 0, 'rgba(0,0,0,0)'] } },
+        // a confident blue, deepest in the channels, so the white streaks stand out (as they do on the dark map)
+        -80, '#235f8c', -40, '#2f6f9e', -20, '#4583b2', -8, '#6a9fc8', -2, '#93bfdc', -0.3, 'rgba(160,201,226,0)', 0, 'rgba(0,0,0,0)'] } },
     // a tunable darkening of all water (the "Water tone" slider), under the texture and streaks
     { id: 'water-shade', type: 'fill', source: 'ofm', 'source-layer': 'water',
       paint: { 'fill-color': '#4f95c8', 'fill-opacity': waterShade } }, // a clear blue, so turning it up reads bluer, not greyer
