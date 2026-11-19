@@ -10,6 +10,7 @@ import { TileRouter } from './tile-router.js';
 import { resolver, buildTrip, summary, fmtDist, UNITS } from './trips.js';
 import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
 import { tileField } from './currents.js';
+import { hoverInfo } from './hover.js';
 
 window.maplibregl = maplibregl;
 const place = new URLSearchParams(location.search).get('place') || 'sf-bay';
@@ -532,6 +533,9 @@ if (flowData) {
   });
   window.flow = flow;
 }
+
+// what's under the cursor: current, depth, buoy names
+hoverInfo(map, { flow: window.flow, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null });
 
 // a full style reload (Web/Paper, water switch) drops the route data and debug grid: put them back
 map.on('style.load', () => { map.getSource('trips')?.setData(state.trip); redrawGridSoon(); });
