@@ -393,11 +393,16 @@ if (flowData) {
     box.parentElement.classList.add('has-tide');
     const cursor = $('tide-cursor'), hover = $('tide-hover');
     const showTide = (t) => {
-      const ms = t0 + (t / n) * (t1 - t0), v = height(ms), dv = height(ms + 600e3) - v;
+      // rising or falling = which extreme comes next (exact right up to the turn)
+      const ms = t0 + (t / n) * (t1 - t0), v = height(ms), next = hl.filter(h => h.ms > ms), dv = next[0]?.type === 'H' ? 1 : -1;
       cursor.style.left = `${(t / n) * 100}%`;
       if (v != null) cursor.querySelector('i').style.top = `${(Y(v) / 42) * 100}%`;
       const sm = label.querySelector('small');
       if (v != null && sm) { sm.textContent = `Tide ${v.toFixed(1)} ft ${dv > 0 ? '↑' : '↓'}`; sm.title = `${dv > 0 ? 'Rising' : 'Falling'} · NOAA prediction for ${tides.name}, ft above MLLW`; }
+      // the next high and low (shown in the screensaver caption): "High 7:20 PM · Low 1:32 AM"
+      const t12 = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      label.querySelector('.ss-next')?.remove();
+      if (sm) sm.insertAdjacentHTML('afterend', `<span class="ss-next">${next.slice(0, 2).map(h => `${h.type === 'H' ? 'High' : 'Low'} ${t12(h.ms)}`).join(' · ')}</span>`);
     };
     const prevOnTime = flow.onTime;
     flow.onTime = (t) => { prevOnTime(t); showTide(t); };

@@ -351,3 +351,5 @@ body.theme-dark .hover-card { background: rgba(22,28,34,0.94); color: #e3e6e8; }
     max-height: calc(100% - 290px); overflow: auto; }
   body.screensaver .m-menu { display: none; }
 }
+.flow-when .ss-next { display: none; }
+.ss-caption .ss-next { display: block; font-size: 12px; opacity: 0.85; }
