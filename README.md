@@ -30,7 +30,7 @@ images stay local (nice to look at); only the .pmtiles and index.json are publis
 
 Each hour's image: one RGB pixel per 50 m cell, north up: R = east-west flow, G = north-south flow
 (square-root companded around 128, max 4 m/s), B = water (from the model's own mesh). ~400 KB/hour. Land comes from OpenFreeMap tiles (style "bay-tiles"),
-no OSM download and no route planner yet. Richardson Bay borrows the same tiles
+no OSM download. Richardson Bay borrows the same tiles
 ("currents": {"from": "sf-bay"} in its place.json). The original Richardson-only version is tagged
 richardson-v1 (checked out at ../bay-paddling-richardson, port 5192).
 
