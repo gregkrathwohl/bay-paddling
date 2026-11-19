@@ -239,7 +239,7 @@ export class FlowGL {
     const gl = this.gl;
     if (this.trailW === w && this.trailH === h) return;
     this.trailW = w; this.trailH = h; this.trailRect = null;
-    for (let k = 0; k < 2; k++) { if (this.trail[k]) gl.deleteTexture(this.trail[k]); this.trail[k] = this.tex(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null, gl.LINEAR); }
+    for (let k = 0; k < 2; k++) { if (this.trail[k]) gl.deleteTexture(this.trail[k]); this.trail[k] = this.tex(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null, gl.LINEAR); }   // 16-bit: an 8-bit image, faded every frame, leaves residue that never reaches zero
   }
 
   // ---- the view in grid metres, the tile level, and which tiles to fetch

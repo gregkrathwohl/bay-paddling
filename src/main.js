@@ -466,7 +466,8 @@ if (flowData) {
   // --- settings: streaks, map style, buoys (all in the page address)
   {
     const el = $('flow-strength'), key = 'bay-paddling:strength';
-    const v0 = view.streaks ?? (() => { try { return +(localStorage.getItem(key) ?? 0.5); } catch { return 0.5; } })();
+    const DEF = GL ? 0.76 : 0.5;   // Greg's pick (2026-11-19): fine texture, and slow water still moves
+    const v0 = view.streaks ?? (() => { try { return +(localStorage.getItem(key) ?? DEF); } catch { return DEF; } })();
     el.value = v0; flow.setStrength(v0);
     el.addEventListener('input', () => { flow.setStrength(+el.value); view.streaks = +el.value; writeView(); try { localStorage.setItem(key, el.value); } catch {} });
     const theme = $('set-theme'), buoys = $('set-buoys');
