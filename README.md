@@ -34,6 +34,15 @@ no OSM download and no route planner yet. Richardson Bay borrows the same tiles
 ("currents": {"from": "sf-bay"} in its place.json). The original Richardson-only version is tagged
 richardson-v1 (checked out at ../bay-paddling-richardson, port 5192).
 
+### Routing, whole Bay
+
+    .venv/bin/python scripts/navgrid.py sf-bay   # once: OSM coastline → navgrid.pmtiles (0.9 MB, committed)
+
+Distance to shore on a 12 m grid (5132 × 6817 cells), as tiles at two levels: 12 m and 48 m.
+src/tile-router.js fetches the archive once, searches the 48 m level first (fast, whole Bay), then
+follows that path on the 12 m level and pulls it tight around points. Water bodies that aren't
+connected to the Bay (lagoons, salt ponds) are routed via the nearest main-Bay water.
+
 ## Publishing
 
 .github/workflows/publish.yml runs four times a day (after each NOAA run) (and on every push to main): fetches the newest

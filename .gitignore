@@ -5,3 +5,4 @@ dist/
 places/*/data/currents-sfbofs.json
 places/*/data/tides.json
 places/*/data/currents/
+places/*/data/coastline.json

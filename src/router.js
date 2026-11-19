@@ -7,7 +7,7 @@
 export class Router {
   static async load(base) {
     const meta = await fetch(`${base}/data/navgrid.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
-    if (!meta) return null;
+    if (!meta || meta.fine) return null;   // a tiled grid (big areas) is TileRouter's
     // createImageBitmap also works in background tabs (img.decode() can stall there),
     // and with colour conversion off the grey values come through untouched
     const blob = await fetch(`${base}/data/navgrid.png`).then(r => r.blob());

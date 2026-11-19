@@ -2,7 +2,7 @@
   "name": "San Francisco Bay",
   "title": "San Francisco Bay",
   "subtitle": "Paddling Guide",
-  "org": "Tidal currents · NOAA SFBOFS",
+  "org": "Tidal currents \u00b7 NOAA SFBOFS",
   "style": "bay-tiles",
   "bbox": [
     -122.66,
@@ -31,5 +31,29 @@
     "hillshade": false,
     "waterMode": "ripples",
     "colour": false
+  },
+  "navgrid": {
+    "seeds": [
+      [
+        -122.6,
+        37.7
+      ],
+      [
+        -122.4,
+        37.84
+      ],
+      [
+        -122.2,
+        37.6
+      ],
+      [
+        -122.4,
+        38.05
+      ],
+      [
+        -122.05,
+        38.075
+      ]
+    ]
   }
 }

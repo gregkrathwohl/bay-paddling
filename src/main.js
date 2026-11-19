@@ -6,6 +6,7 @@ import { buildBayStyle, outsideMask } from './bay-style.js';
 import { addImages } from './patterns.js';
 import { LabelLayer, STYLES } from './labels.js';
 import { Router } from './router.js';
+import { TileRouter } from './tile-router.js';
 import { resolver, buildTrip, summary, fmtDist, UNITS } from './trips.js';
 import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
 import { tileField } from './currents.js';
@@ -231,7 +232,10 @@ document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click'
 $('hillshade').addEventListener('change', (ev) => { state.hillshade = ev.target.checked; savePrefs({ hillshade: state.hillshade }); restyle(); });
 
 // --- water texture switch, route planner, currents
-const router = await Router.load(base);
+// one route grid image (Richardson Bay) or a tiled grid for big areas (fetched in the background)
+const router = await Router.load(base) || await TileRouter.load(base);
+router?.load?.()?.then(() => refresh());
+window.router = router; // for poking at in devtools
 const resolve = resolver(osm, aton);
 const waterSel = $('water-mode'), card = $('routes');
 $('water-row').hidden = false;
@@ -286,7 +290,7 @@ map.on('click', (ev) => {
 });
 // --- debug: the router's water grid as an image on the map
 const gridOn = $('grid-on');
-$('grid-toggle').hidden = !router;
+$('grid-toggle').hidden = !router?.debugImage;
 const drawGrid = () => {
   if (map.getLayer('navgrid-debug')) map.removeLayer('navgrid-debug');
   if (map.getSource('navgrid-debug')) map.removeSource('navgrid-debug');

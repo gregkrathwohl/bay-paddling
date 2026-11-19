@@ -1,7 +1,6 @@
 # Ideas for later
 
 ## Next
-- Whole-Bay routing (route grid as tiles, loaded along the way)
 - Launches for the whole Bay
 - Retire the Richardson Bay map once the whole Bay has routing (move its launches, labels, racing buoys)
 

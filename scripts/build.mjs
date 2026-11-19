@@ -26,7 +26,7 @@ fs.writeFileSync(path.join(out, 'index.html'), html);
 
 const KEEP = ['place.json', 'labels.json', 'trips.json', 'routes.json'];
 const DATA = ['osm.geojson', 'aton.geojson', 'coast.geojson', 'ripples.geojson', 'routes.geojson',
-  'navgrid.png', 'navgrid.json', 'tides.json'];
+  'navgrid.png', 'navgrid.json', 'navgrid.pmtiles', 'tides.json'];
 for (const id of fs.readdirSync('places')) {
   const dir = `places/${id}`;
   if (!fs.existsSync(`${dir}/place.json`)) continue;
