@@ -39,10 +39,10 @@ document.querySelector('.key').innerHTML = `
   <p class="src">Data: OpenStreetMap, NOAA ENC (buoys &amp; beacons), OpenFreeMap, AWS Terrain Tiles bathymetry. Not for navigation.</p>`;
 document.title = `${cfg.name} ${cfg.subtitle}`;
 document.getElementById('title').textContent = cfg.title || cfg.name;
-// shrink the title until its longest word fits the box (e.g. RICHARDSON)
+// the title on one line: the panel is as wide as it needs, up to the screen
 {
   const h1 = document.getElementById('title'), box = h1.parentElement;
-  h1.innerHTML = (cfg.title || cfg.name).split(' ').map(w => `<span style="display:block">${w}</span>`).join('');
+  h1.textContent = cfg.title || cfg.name;   // one line; the panel grows to fit (shrinks the type if it can't)
   const fit = () => {
     h1.style.fontSize = '';
     let size = parseFloat(getComputedStyle(h1).fontSize);
@@ -150,7 +150,8 @@ map.addControl(new maplibregl.ScaleControl({ unit: 'imperial', maxWidth: 160 }),
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'bottom-right');
 map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: '© OpenStreetMap contributors' }));
 // start the attribution collapsed to its ⓘ button (MapLibre opens it on wide screens)
-map.once('load', () => document.querySelectorAll('.maplibregl-ctrl-attrib').forEach(el => { el.classList.remove('maplibregl-compact-show'); el.removeAttribute('open'); }));
+const collapseAttrib = () => document.querySelectorAll('.maplibregl-ctrl-attrib').forEach(el => { el.classList.remove('maplibregl-compact-show'); el.removeAttribute('open'); });
+map.once('load', collapseAttrib); map.once('idle', collapseAttrib);   // again once the tile sources have added their credits
 
 const zoomEl = $('zoom');
 const showZoom = () => (zoomEl.textContent = `z${map.getZoom().toFixed(1)}`);
@@ -532,6 +533,13 @@ if (flowData) {
     try { await navigator.clipboard.writeText(txt); $('tuner-copy').textContent = 'Copied ✓'; } catch {}
   });
   window.flow = flow;
+}
+
+// phones: one button opens the time panel and legend; tapping the map closes them
+{
+  const btn = $('m-menu'), set = (on) => { document.body.classList.toggle('m-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!document.body.classList.contains('m-open')));
+  map.on('click', () => { if (innerWidth <= 700) set(false); });
 }
 
 // what's under the cursor: current, depth, buoy names

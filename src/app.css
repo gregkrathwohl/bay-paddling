@@ -11,7 +11,7 @@ html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink
   position: absolute; z-index: 2; background: rgba(251, 250, 246, 0.96);
   border: 1px solid var(--frame); outline: 0.5px solid var(--frame); outline-offset: 3px;
 }
-.title-panel { top: 18px; left: 18px; width: 250px; padding: 16px 18px 14px; }
+.title-panel { top: 18px; left: 18px; width: max-content; min-width: 250px; max-width: calc(100% - 36px); padding: 16px 22px 14px; }
 .title-panel .org { font-family: var(--serif); color: var(--accent); font-weight: 600; font-size: 13px; text-align: center; }
 .title-panel h1 { font-family: var(--serif); font-weight: 600; font-size: 34px; white-space: nowrap; line-height: 1; margin: 8px 0 2px; text-align: center; text-transform: uppercase; letter-spacing: 0.02em; }
 .title-panel .subtitle { font-family: var(--serif); color: var(--accent); font-size: 22px; text-transform: uppercase; letter-spacing: 0.08em; text-align: center; padding-bottom: 10px; border-bottom: 1px solid #d8cfc6; }
@@ -67,11 +67,7 @@ html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink
 
 .maplibregl-ctrl-scale { border-color: #333; color: #333; font-family: var(--sans); }
 
-@media (max-width: 700px) {
-  .title-panel { width: auto; right: 16px; left: 16px; top: 64px; padding: 10px; }
-  .title-panel h1 { font-size: 24px; }
-  .areas, .key { display: none; }
-  }
+
 
 .planner { top: 64px; }
 .planner label { display: block; }
@@ -163,7 +159,6 @@ body:not([data-public]) .routes-card { top: 64px; } /* below the dev toolbar */
 .rt-plan button:hover { background: #f1f4f6; }
 .rt-plan button.primary { background: #3a6f97; border-color: #3a6f97; color: #fff; }
 .rt-plan[hidden], .rt-idle[hidden], .rt-plan .hint[hidden] { display: none; }
-@media (max-width: 700px) { .routes-card { width: auto; left: 16px; right: 16px; top: auto; bottom: 120px; max-height: 40vh; } .routes-card:not(.collapsed) ~ .flow-panel { } }
 .rt-new[hidden], .rt-list[hidden], .rt-plan[hidden] { display: none; }
 
 .rt-top { display: flex; align-items: flex-start; gap: 8px; }
@@ -331,3 +326,28 @@ body.theme-dark.screensaver .ss-caption { color: rgba(225,232,238,0.8); text-sha
 .hover-card[hidden] { display: none; }
 .hover-card b { font-weight: 600; }
 body.theme-dark .hover-card { background: rgba(22,28,34,0.94); color: #e3e6e8; }
+
+/* ---------- phones: just the map and the streaks; one button opens the time panel + legend ---------- */
+.m-menu { display: none; }
+@media (max-width: 700px) {
+  .title-panel, .key, .routes-card, .flow-panel, .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group, .maplibregl-ctrl-scale { display: none !important; }
+  /* the map credit stays, tucked bottom-left so the button has the corner */
+  .maplibregl-ctrl-bottom-right { right: auto; left: 0; }
+  .m-menu { display: grid; place-items: center; position: absolute; z-index: 5; right: 14px; bottom: calc(18px + env(safe-area-inset-bottom));
+    width: 50px; height: 50px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.96); color: #2f5f86;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1), 0 4px 14px rgba(0,0,0,0.18); }
+  .m-menu .i-close, body.m-open .m-menu .i-open { display: none; }
+  body.m-open .m-menu .i-close { display: block; }
+  body.theme-dark .m-menu { background: rgba(24,30,36,0.94); color: #9cc6e6; }
+  /* open: the time panel as a bottom sheet, the legend above it */
+  body.m-open .flow-panel:not([hidden]) { display: flex !important; flex-wrap: wrap; left: 10px; right: 10px; width: auto; transform: none;
+    bottom: calc(80px + env(safe-area-inset-bottom)); gap: 8px 10px; padding: 10px 12px; }
+  body.m-open .flow-track { order: 1; flex: 1 1 100%; min-width: 0; }
+  body.m-open .flow-play { order: 2; }
+  body.m-open .flow-when { order: 3; flex: 1; }
+  body.m-open #flow-now { order: 4; } body.m-open #flow-settings { order: 5; } body.m-open #flow-full { display: none; }
+  body.m-open .flow-pop { left: 0; right: 0; width: auto; }
+  body.m-open .key { display: block !important; left: 10px; right: 10px; width: auto; bottom: auto; top: 14px;
+    max-height: calc(100% - 290px); overflow: auto; }
+  body.screensaver .m-menu { display: none; }
+}
