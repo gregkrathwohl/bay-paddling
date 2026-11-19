@@ -1,10 +1,10 @@
-# Twice a day: pull NOAA's newest SFBOFS forecast (54 hourly files, ~3 GB, streamed and deleted),
+# Four times a day, after each NOAA SFBOFS run lands (03z, 09z, 15z, 21z; files arrive ~1.5 h later): pull the newest forecast (54 hourly files, ~3 GB, streamed and deleted),
 # cut it into per-hour PMTiles, refresh the tide predictions, build, and publish to GitHub Pages.
 # Also runs on every push to main, and by hand from the Actions tab.
 name: Publish
 on:
   schedule:
-    - cron: '20 6,18 * * *'   # 06:20 / 18:20 UTC: after NOAA's 03z and 15z runs have landed
+    - cron: '40 4,10,16,22 * * *'   # ~1.7 h after each run starts
   push:
     branches: [main]
   workflow_dispatch:

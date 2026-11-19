@@ -143,7 +143,9 @@ export function buildBayStyle({ c = bayPalette, osm, mask, currents, routes, ato
         'circle-stroke-color': '#1f1f1f', 'circle-stroke-width': 0.8 } },
     { id: 'aton-label', type: 'symbol', source: 'aton', minzoom: minz(12.5),
       filter: ['all', ['!=', ['get', 'label'], ''], ['any', ['!', ['get', 'inner']], ['>=', ['zoom'], 15.5]]],
-      layout: { 'text-field': ['get', 'label'], 'text-font': FONT.italic, 'text-size': T(9),
+      // chart-style "R 4" / "G 3" until you're close; the full name ("Oakland Inner Harbor R 4") from z15
+      layout: { 'text-field': ['step', ['zoom'], ['coalesce', ['get', 'short'], ['get', 'label']], 15, ['get', 'label']],
+        'text-font': FONT.italic, 'text-size': T(9),
         'text-anchor': 'left', 'text-offset': [0.7, 0], 'text-max-width': 8 },
       paint: { 'text-color': ['match', ['get', 'colour'], 'red', '#a3262d', 'green', '#22693a', c.inkSoft],
         'text-halo-color': 'rgba(255,255,255,0.8)', 'text-halo-width': 1.2 } },

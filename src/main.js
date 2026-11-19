@@ -11,7 +11,7 @@ import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS } from './flow.js';
 import { tileField } from './currents.js';
 
 window.maplibregl = maplibregl;
-const place = new URLSearchParams(location.search).get('place') || 'richardson-bay';
+const place = new URLSearchParams(location.search).get('place') || 'sf-bay';
 const base = `places/${place}`;
 const empty = { type: 'FeatureCollection', features: [] };
 const optional = (url) => fetch(url).then(r => (r.ok ? r.json() : empty)).catch(() => empty);

@@ -36,6 +36,6 @@ richardson-v1 (checked out at ../bay-paddling-richardson, port 5192).
 
 ## Publishing
 
-.github/workflows/publish.yml runs twice a day (and on every push to main): fetches the newest
+.github/workflows/publish.yml runs four times a day (after each NOAA run) (and on every push to main): fetches the newest
 NOAA forecast and tides, builds dist/ and deploys it to GitHub Pages. Nothing is committed back;
 the generated data lives only in the published site.
