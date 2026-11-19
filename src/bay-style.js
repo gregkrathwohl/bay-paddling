@@ -186,9 +186,7 @@ export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPale
     const i = (id) => layers.findIndex(l => l.id === id);
     const ofm = (l) => ({ source: 'ofm', ...l });
     layers.splice(i('park'), 1, ofm({ id: 'park', type: 'fill', 'source-layer': 'park', paint: { 'fill-color': c.park } }));
-    layers.splice(i('coast'), 1, ofm({ id: 'coast', type: 'line', 'source-layer': 'water',
-      filter: ['match', ['get', 'class'], ['ocean', 'lake', 'river'], true, false],
-      paint: { 'line-color': c.coast, 'line-width': W(0.9), 'line-opacity': 0.8 } }));
+    layers.splice(i('coast'), 1);   // no drawn shoreline: the water's edge alone reads cleaner here
     const cls = (...v) => ['match', ['get', 'class'], v, true, false];
     layers.splice(i('road'), 1, ofm({ id: 'road', type: 'line', 'source-layer': 'transportation', minzoom: 12,
       filter: cls('secondary', 'tertiary', 'minor'), paint: { 'line-color': c.road, 'line-width': W(0.55), 'line-opacity': 0.7 } }));
