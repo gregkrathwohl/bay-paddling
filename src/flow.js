@@ -23,6 +23,7 @@ export const DEFAULTS = {
   opacity: 2,       // overall streak opacity (multiplier; capped at fully opaque)
   width: 0.6,       // overall streak width (multiplier)
   life: 80,         // average particle life in frames (too long and particles bunch into 'tide lines')
+  colour: '#ffffff', // streak colour
 };
 
 export class FlowLayer {
@@ -128,7 +129,8 @@ export class FlowLayer {
     // real-speed motion, but eased once you zoom in past 13.5 so it doesn't go to warp speed
     const z = this.map.getZoom();
     const mPerFrame = (this.p.speed / FPS) * (z > 13.5 ? Math.pow(2, -(z - 13.5) * this.p.zoomEase) : Math.pow(2, (13.5 - z) * this.p.zoomOutSpeed));
-    const K = this.strengthK().opacity;
+    const K = this.strengthK().opacity, hex = this.p.colour || '#ffffff';
+    const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(',');
     for (const p of this.parts) {
       const vel = p.age <= p.life && this.vel(p.lng, p.lat);
       if (!vel) { Object.assign(p, this.spawn()); continue; }
@@ -142,7 +144,7 @@ export class FlowLayer {
       const life = Math.min(1, p.age / 8, (p.life - p.age) / 8);
       const strength = Math.min(1, Math.sqrt(sp / 1.2));
       const width = (1.1 + 0.7 * strength) * r * this.p.width;
-      ctx.strokeStyle = `rgba(255,255,255,${Math.min(1, life * (0.65 + 0.35 * strength) * this.p.opacity * K).toFixed(3)})`;
+      ctx.strokeStyle = `rgba(${rgb},${Math.min(1, life * (0.65 + 0.35 * strength) * this.p.opacity * K).toFixed(3)})`;
       ctx.lineWidth = width;
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
       p.lng = lng2; p.lat = lat2;

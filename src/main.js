@@ -80,6 +80,8 @@ const contourTiles = (mode) => demSource.contourProtocolUrl({
 // The editor (dev server only) autosaves there, so a refresh, the Preview tab and the published
 // site all show exactly what was saved. ?preview renders the published view.
 const PREVIEW = new URLSearchParams(location.search).has('preview');
+// ?lab: a local playground for the streaks (tuner open, nothing saved back to place.json)
+const LAB = new URLSearchParams(location.search).has('lab');
 // the viewer's settings live in the page address, so any view can be shared or used as a screensaver:
 //   ?style=dark  &buoys=0  &streaks=0.7  &rate=live|0.1|0.33|1  &play  &screensaver   (+ #zoom/lat/lng)
 const Q = new URLSearchParams(location.search);
@@ -113,7 +115,7 @@ const postJSON = (url, body) => fetch(url, { method: 'POST', body: JSON.stringif
 let saveT = 0;
 const savePrefs = (patch) => {
   Object.assign(prefs, patch);
-  if (!EDITOR) return;
+  if (!EDITOR || LAB) return;
   status('Saving…'); clearTimeout(saveT);
   saveT = setTimeout(() => postJSON(`/api/settings/${place}`, { defaults: Object.fromEntries(SAVED_KEYS.filter(k => prefs[k] !== undefined).map(k => [k, prefs[k]])) })
     .then(() => status('Saved')).catch(e => status(`Save failed: ${e.message}`)), 500);
@@ -335,7 +337,9 @@ if (flowData) {
   // streaks sit above water, ripples and coast, below piers, roads, routes, buoys and every label.
   // No frozen state: shown means moving.
   const flowKey = 'bay-paddling:flow:v4'; // bump when DEFAULTS change
-  const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
+  // the lab starts from a dense, dark-blue look (your own tweaks are remembered per browser)
+  const LAB_START = { density: 14, zoomedOut: 0.1, opacity: 0.45, width: 0.7, trail: 0.95, speed: 300, colour: '#1f4f7a' };
+  const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || 'null') ?? (LAB ? LAB_START : {}); } catch { return {}; } })();
   const flow = new FlowLayer(map, flowData, { beforeId: 'road', params: savedFlow, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
@@ -498,11 +502,11 @@ if (flowData) {
 
   // --- tuning panel: every streak knob live; "Copy settings" gives values to hard-code
   const SLIDERS = [
-    ['density', 'Density', 0.2, 3, 0.05], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
+    ['density', 'Density', 0.2, 30, 0.1], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
     ['zoomOutSpeed', 'Keep moving when zoomed out', 0, 1, 0.05],
     ['speed', 'Speed', 50, 1200, 10], ['zoomEase', 'Calm when zoomed in', 0, 1, 0.05],
-    ['compress', 'Slow-water boost (lower = more)', 0.2, 1, 0.05], ['trail', 'Trail length', 0.8, 0.99, 0.005],
-    ['life', 'Particle life', 20, 200, 5], ['opacity', 'Opacity', 0.2, 2, 0.05], ['width', 'Width', 0.15, 2.5, 0.05],
+    ['compress', 'Slow-water boost (lower = more)', 0.2, 1, 0.05], ['trail', 'Trail length', 0.8, 0.995, 0.005],
+    ['life', 'Particle life', 20, 200, 5], ['opacity', 'Opacity', 0.02, 2, 0.01], ['width', 'Width', 0.1, 2.5, 0.05],
   ];
   const HELP = {
     density: 'how many streaks on screen', zoomedOut: 'fewer streaks as you zoom out',
@@ -515,7 +519,8 @@ if (flowData) {
   const render = () => {
     box.innerHTML = `<label title="darken all the water so white streaks read better">Water tone<span id="tv-waterShade">${prefs.waterShade}</span><input type="range" data-shade min="0" max="0.45" step="0.01" value="${prefs.waterShade}"></label>` +
       SLIDERS.map(([k, label, min, max, step]) =>
-      `<label title="${HELP[k] || ''}">${label}<span id="tv-${k}">${flow.p[k]}</span><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${flow.p[k]}"></label>`).join('');
+      `<label title="${HELP[k] || ''}">${label}<span id="tv-${k}">${flow.p[k]}</span><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${flow.p[k]}"></label>`).join('') +
+      `<label class="row">Streak colour <input type="color" data-colour value="${flow.p.colour || '#ffffff'}"></label>`;
   };
   render();
   const persist = () => { try { localStorage.setItem(flowKey, JSON.stringify(flow.p)); } catch {} };
@@ -525,6 +530,7 @@ if (flowData) {
       if (map.getLayer('water-shade')) map.setPaintProperty('water-shade', 'fill-opacity', v);
       return;
     }
+    if ('colour' in ev.target.dataset) { flow.setParams({ colour: ev.target.value }); persist(); return; }
     const k = ev.target.dataset.k; if (!k) return;
     const v = +ev.target.value; $(`tv-${k}`).textContent = v; flow.setParams({ [k]: v }); persist();
   });
@@ -540,6 +546,7 @@ if (flowData) {
     $('tuner-out').hidden = false; $('tuner-out').textContent = txt;
     try { await navigator.clipboard.writeText(txt); $('tuner-copy').textContent = 'Copied ✓'; } catch {}
   });
+  if (LAB) { $('tuner').hidden = false; setCollapsed(true); }
   window.flow = flow;
 }
 
