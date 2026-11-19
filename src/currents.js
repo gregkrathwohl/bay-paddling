@@ -33,7 +33,7 @@ export async function tileField(dir) {
       const px = ctx.getImageData(0, 0, S, S).data, n = S * S;
       const u = new Float32Array(n), v = new Float32Array(n), m = new Uint8Array(n);   // ~330 KB a tile
       for (let i = 0; i < n; i++) { m[i] = px[i * 4 + 2] > 127; u[i] = lut[px[i * 4]]; v[i] = lut[px[i * 4 + 1]]; }
-      if (cache.has(key)) cache.set(key, { u, v, m });
+      if (cache.has(key)) { cache.set(key, { u, v, m }); field.onTile?.(t, tz); }
     })());
     for (const k of cache.keys()) { if (cache.size <= LIMIT) break; if (!(cache.get(k) instanceof Promise)) cache.delete(k); }
   };
@@ -88,6 +88,24 @@ export async function tileField(dir) {
     },
     get level() { return z; },
     get cached() { return cache.size; },
+
+    // for the WebGL renderer: the grid's geometry, and the loaded tiles of one hour and level as one
+    // RGBA float image (u, v in m/s, water 0/1). complete = false while some tiles are still loading.
+    grid: { w, n: nN, mx, my: MY, cell: CELL, tile: S, maxzoom: ZMAX },
+    mosaic(t, tz, tx0, ty0, ntx, nty) {
+      const W = ntx * S, H = nty * S, out = new Float32Array(W * H * 4);
+      let complete = true;
+      for (let j = 0; j < nty; j++) for (let i = 0; i < ntx; i++) {
+        const tile = cache.get(K(t, tz, tx0 + i, ty0 + j));
+        if (tile === null) continue;
+        if (!tile || tile instanceof Promise) { complete = false; continue; }
+        for (let y = 0; y < S; y++) {
+          let o = ((j * S + y) * W + i * S) * 4, k = y * S;
+          for (let x = 0; x < S; x++, o += 4, k++) { out[o] = tile.u[k]; out[o + 1] = tile.v[k]; out[o + 2] = tile.m[k]; }
+        }
+      }
+      return { data: out, width: W, height: H, complete };
+    },
   };
   return field;
 }

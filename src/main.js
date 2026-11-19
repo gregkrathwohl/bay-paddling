@@ -8,6 +8,7 @@ import { LabelLayer, STYLES } from './labels.js';
 import { Router } from './router.js';
 import { TileRouter } from './tile-router.js';
 import { resolver, buildTrip, summary, fmtDist, UNITS } from './trips.js';
+import { FlowGL } from './flow-gl.js';
 import { FlowLayer, timeLabel, DEFAULTS as FLOW_DEFAULTS, PRESETS as FLOW_PRESETS } from './flow.js';
 import { tileField } from './currents.js';
 import { hoverInfo } from './hover.js';
@@ -339,7 +340,8 @@ if (flowData) {
   const flowKey = 'bay-paddling:flow:v5'; // bump when DEFAULTS change
   // the lab starts from a dense, dark-blue look (your own tweaks are remembered per browser)
   const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
-  const flow = new FlowLayer(map, flowData, { beforeId: 'road', params: { ...FLOW_PRESETS[view.currents](view.theme), ...(LAB ? savedFlow : {}) }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
+  // ?gl: the experimental WebGL renderer (src/flow-gl.js)
+  const flow = new (Q.has('gl') ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', params: { ...FLOW_PRESETS[view.currents](view.theme), ...(LAB ? savedFlow : {}) }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
   // Now is only useful once you've moved away from now
@@ -506,7 +508,7 @@ if (flowData) {
 
   // --- tuning panel: every streak knob live; "Copy settings" gives values to hard-code
   const SLIDERS = [
-    ['density', 'Density', 0.2, 30, 0.1], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
+    ['density', 'Density', 0.2, Q.has('gl') ? 300 : 30, Q.has('gl') ? 0.5 : 0.1], ['zoomedOut', 'Thin when zoomed out', 0, 1.5, 0.05],
     ['zoomOutSpeed', 'Keep moving when zoomed out', 0, 1, 0.05],
     ['speed', 'Speed', 50, 1200, 10], ['zoomEase', 'Calm when zoomed in', 0, 1, 0.05],
     ['compress', 'Slow-water boost (lower = more)', 0.2, 1, 0.05], ['trail', 'Trail length', 0.8, 0.995, 0.005],
@@ -550,7 +552,15 @@ if (flowData) {
     $('tuner-out').hidden = false; $('tuner-out').textContent = txt;
     try { await navigator.clipboard.writeText(txt); $('tuner-copy').textContent = 'Copied ✓'; } catch {}
   });
-  if (LAB) { $('tuner').hidden = false; setCollapsed(true); }
+  if (LAB) {
+    $('tuner').hidden = false; setCollapsed(true);
+    // live readout: renderer, streak count, frames per second
+    const info = document.createElement('div'); info.className = 'lab-info'; $('tuner').prepend(info);
+    let last = performance.now(), frames = 0;
+    const count = () => { frames++; requestAnimationFrame(count); }; requestAnimationFrame(count);
+    setInterval(() => { const now = performance.now(), fps = Math.round(frames * 1000 / (now - last)); frames = 0; last = now;
+      info.textContent = `${Q.has('gl') ? 'WebGL' : 'Canvas'} · ${flow.parts.length.toLocaleString()} streaks · ${flow.fps ?? fps} fps`; }, 1000);
+  }
   window.flow = flow;
 }
 

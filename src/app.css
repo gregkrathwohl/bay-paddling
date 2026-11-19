@@ -354,3 +354,4 @@ body.theme-dark .hover-card { background: rgba(22,28,34,0.94); color: #e3e6e8; }
 .flow-when .ss-next, .flow-when .ss-where { display: none; }
 .ss-caption .ss-next { display: block; font-size: 17px; }
 .ss-caption .ss-where { display: block; font-size: 14px; opacity: 0.75; }
+.lab-info { font: 600 12px var(--sans); color: #2f5f86; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
