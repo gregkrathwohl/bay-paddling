@@ -29,7 +29,7 @@ export const darkPalette = {
   ink: '#e6e4dc', inkSoft: '#97a2aa', waterInk: '#86b6d8', outside: '#14181c',
 };
 
-export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPalette : bayPalette, osm, mask, currents, routes, aton, coastLines, ripples, trips, waterMode = 'ripples', waterShade = 0.1, contourTiles, mode = 'web', designZoom = 13.6, hillshade = false, handNames = [], landTiles = false }) {
+export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPalette : bayPalette, osm, mask, currents, routes, aton, coastLines, ripples, trips, waterMode = 'ripples', waterShade = 0.1, contourTiles, mode = 'web', designZoom = 13.6, hillshade = false, handNames = [], landTiles = false, lights = 'flash', landContours = true }) {
   const paper = mode === 'paper';
   const W = (base, k = null) => {
     const v = (x) => (k ? ['*', k, x] : x);
@@ -67,9 +67,9 @@ export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPale
         ...(theme === 'dark'
           ? { 'hillshade-shadow-color': '#05080a', 'hillshade-highlight-color': 'rgba(170,200,210,0.16)', 'hillshade-accent-color': '#0c1114' }
           : { 'hillshade-shadow-color': '#56645b', 'hillshade-highlight-color': 'rgba(255,255,250,0.55)', 'hillshade-accent-color': '#6d786f' }) } }] : []),
-    { id: 'land-contour', type: 'line', source: 'contours', 'source-layer': 'contours', minzoom: minz(12),
+    ...(landContours ? [{ id: 'land-contour', type: 'line', source: 'contours', 'source-layer': 'contours', minzoom: minz(12),
       filter: ['>', ['get', 'ele'], 0],
-      paint: { 'line-color': '#d9c7aa', 'line-width': W(0.4), 'line-opacity': 0.6 } },
+      paint: { 'line-color': '#d9c7aa', 'line-width': W(0.4), 'line-opacity': 0.6 } }] : []),
 
     // ---- water: base, depth tint, isobaths
     { id: 'water', type: 'fill', source: 'ofm', 'source-layer': 'water', paint: { 'fill-color': c.water } },
@@ -147,6 +147,8 @@ export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPale
         'text-allow-overlap': true, 'text-ignore-placement': true },
       paint: { 'text-color': ['match', ['get', 'colour'], 'red', '#c8323a', 'green', '#2f8a4a', 'yellow', '#e2b52b', '#555'],
         'text-halo-color': '#1f1f1f', 'text-halo-width': 0.6 } },
+    // buoy lights (experiment): each lit mark flashes its real pattern (NOAA: Fl 4s, Q, Iso…), with its own phase
+    ...(lights !== 'off' ? lightLayers({ theme, minz, mode: lights }) : []),
     { id: 'buoy', type: 'circle', source: 'aton', minzoom: minz(11),
       filter: ['all', ['get', 'buoy'], ['any', ['!', ['get', 'inner']], ['>=', ['zoom'], 14]]],
       paint: {
@@ -218,6 +220,7 @@ export function buildBayStyle({ theme = 'light', c = theme === 'dark' ? darkPale
 
   return {
     version: 8,
+    state: { lt: { default: 0 } },
     glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
     sources: {
       osm: { type: 'geojson', data: osm, maxzoom: 18, tolerance: 0.25 },
@@ -246,4 +249,52 @@ export function outsideMask(boundaryFeatures) {
   const world = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
   return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {},
     geometry: { type: 'MultiPolygon', coordinates: [[world, ...parts.map(p => p[0])], ...parts.flatMap(p => p.slice(1).map(h => [h]))] } }] };
+}
+
+// brightness 0–1 of a mark's light at time t (seconds, from global state 'lt').
+// Flashes ease on, hold about a second and ease off; between flashes the light all but disappears.
+const BASE = 0.06;
+const ramp = (x, on, rise, fall) => ['case',
+  ['<', x, rise], ['/', x, rise],
+  ['<', x, on], 1,
+  ['<', x, ['+', on, fall]], ['-', 1, ['/', ['-', x, on], fall]],
+  0];
+function lightLevel(mode) {
+  // quick flashers (Q: once a second) run at half speed, so they blink instead of flicker
+  const quick = ['Q', 'VQ', 'UQ', 'IQ'];
+  const per = ['*', ['get', 'lper'], ['match', ['get', 'lchr'], quick, 2, 1]], x = ['%', ['+', ['global-state', 'lt'], ['get', 'lph']], per];
+  const soft = (v) => ['+', BASE, ['*', 1 - BASE, ['*', v, v]]];   // squared: a gentle start and finish
+  if (mode === 'steady') return 0.7;
+  if (mode === 'pulse') return soft(['-', 0.5, ['*', 0.5, ['cos', ['*', 6.2832, ['/', x, per]]]]]);
+  return ['match', ['get', 'lchr'],
+    'F', 0.75,
+    'Iso', soft(ramp(x, ['/', per, 2], 0.3, 0.4)),
+    'Oc', soft(ramp(x, ['*', per, 0.75], 0.3, 0.4)),
+    quick, soft(ramp(x, 0.6, 0.25, 0.5)),
+    'LFl', soft(ramp(x, 1.8, 0.4, 0.8)),
+    soft(ramp(x, 0.9, 0.3, 0.7))];
+}
+// Zoomed out, only the strong lights show (NOAA's nominal range, nautical miles: most marks are 2–4,
+// the big lighthouses 8–20); the rest grow in as you zoom. Stronger lights are also drawn bigger.
+const R = ['coalesce', ['get', 'lrng'], 2];
+const gate = (min, size) => ['case', ['>=', R, min], size, 0];
+const big = ['min', 2, ['+', 0.8, ['/', R, 10]]];   // 2 nm → 1.0×, 8 nm → 1.6×, 12+ nm → 2×
+function lightLayers({ theme, minz, mode }) {
+  const dark = theme === 'dark', lvl = lightLevel(mode);
+  const col = ['match', ['get', 'lcol'], 'red', dark ? '#ff4a4a' : '#e0262e', 'green', dark ? '#3dff7a' : '#14a548', 'yellow', '#ffd23a', dark ? '#fff6d8' : '#f2b600'];
+  const filter = ['has', 'lchr'];
+  return [
+    { id: 'light-glow', type: 'circle', source: 'aton', minzoom: minz(8), filter,
+      paint: { 'circle-color': col, 'circle-blur': 1, 'circle-pitch-alignment': 'map',
+        'circle-radius': ['interpolate', ['exponential', 1.6], ['zoom'],
+          8, gate(8, ['*', 2.5, big]), 10, gate(5, ['*', 3.5, big]), 11.5, gate(3, ['*', 5, big]),
+          13, ['*', 7, big], 16, ['*', 18, big]],
+        'circle-opacity': ['*', dark ? 0.7 : 0.5, lvl] } },
+    { id: 'light-core', type: 'circle', source: 'aton', minzoom: minz(8), filter,
+      paint: { 'circle-color': dark ? '#ffffff' : col, 'circle-blur': 0.6,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          8, gate(8, ['*', 0.8, big]), 10, gate(5, ['*', 1, big]), 11.5, gate(3, ['*', 1.2, big]),
+          13, ['*', 1.5, big], 15, ['*', 2.2, big]],
+        'circle-opacity': ['*', dark ? 0.9 : 0.65, lvl] } },
+  ];
 }

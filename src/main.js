@@ -87,15 +87,23 @@ const LAB = new URLSearchParams(location.search).has('lab');
 //   ?style=dark  &buoys=0  &streaks=0.7  &rate=live|0.1|0.33|1  &play  &screensaver   (+ #zoom/lat/lng)
 const Q = new URLSearchParams(location.search);
 const view = {
-  theme: Q.get('style') === 'dark' ? 'dark' : 'light', buoys: Q.get('buoys') !== '0',
+  theme: Q.get('style') === 'dark' ? 'dark' : 'light', buoys: Q.get('buoys') !== '0', // dark starts as the quiet visualization: lights only, no labels (each follows the style until you pick it)
+  marks: Q.has('marks') ? Q.get('marks') !== '0' : Q.get('style') !== 'dark', labels: Q.has('labels') ? Q.get('labels') !== '0' : Q.get('style') !== 'dark',
   streaks: Q.has('streaks') ? +Q.get('streaks') : null, rate: Q.get('rate') || '0.33',
   play: Q.has('play'), screensaver: Q.has('screensaver'), currents: Q.get('currents') === 'fine' ? 'fine' : 'dense',
+  // experiment: buoy lights. Dark is the quiet visualization (lights on); light is the chart (just buoys).
+  lights: ['flash', 'pulse', 'steady', 'off'].includes(Q.get('lights')) ? Q.get('lights') : (Q.get('style') === 'dark' ? 'flash' : 'off'),
 };
+const lightsDefault = () => (view.theme === 'dark' ? 'flash' : 'off');
+let lightsChosen = Q.has('lights');   // until picked, the lights follow the map style
+const chosen = { marks: Q.has('marks'), labels: Q.has('labels') };
 const writeView = () => {
   const q = new URLSearchParams(location.search);
   const set = (k, v, def) => (v === def || v == null ? q.delete(k) : q.set(k, v));
-  set('style', view.theme, 'light'); set('currents', view.currents, 'dense'); set('buoys', view.buoys ? null : '0'); set('rate', view.rate, '0.33');
-  set('streaks', view.streaks == null ? null : String(view.streaks));
+  set('style', view.theme, 'light'); set('currents', view.currents, 'dense'); set('buoys', view.buoys ? null : '0'); const plain = view.theme !== 'dark';   // the style's own default isn't written to the address
+  chosen.marks && view.marks !== plain ? q.set('marks', view.marks ? '1' : '0') : q.delete('marks');
+  chosen.labels && view.labels !== plain ? q.set('labels', view.labels ? '1' : '0') : q.delete('labels'); set('rate', view.rate, '0.33');
+  set('streaks', view.streaks == null ? null : String(view.streaks)); set('lights', view.lights, lightsDefault());
   view.play ? q.set('play', '') : q.delete('play');
   view.screensaver ? q.set('screensaver', '') : q.delete('screensaver');
   history.replaceState(history.state, '', `${location.pathname}?${q.toString().replace(/=(&|$)/g, '$1')}${location.hash}`);
@@ -107,8 +115,8 @@ if (PREVIEW) document.body.setAttribute('data-public', '');
 if (view.screensaver) document.body.setAttribute('data-public', '');
 const PUBLIC = document.body.hasAttribute('data-public');
 const EDITOR = !PUBLIC;
-const SAVED_KEYS = ['mode', 'hillshade', 'waterMode', 'waterShade', 'currents'];
-const prefs = { mode: 'web', hillshade: false, waterMode: 'ripples', waterShade: 0, currents: true, ...(cfg.defaults || {}) };
+const SAVED_KEYS = ['mode', 'hillshade', 'contours', 'waterMode', 'waterShade', 'currents'];
+const prefs = { mode: 'web', hillshade: false, contours: false, waterMode: 'ripples', waterShade: 0, currents: true, ...(cfg.defaults || {}) };
 const $ = (id) => document.getElementById(id);
 const status = (t) => { const el = $('ed-status'); if (el) { el.textContent = t; el.classList.toggle('busy', t !== 'Saved'); } };
 const postJSON = (url, body) => fetch(url, { method: 'POST', body: JSON.stringify(body) })
@@ -121,16 +129,16 @@ const savePrefs = (patch) => {
   saveT = setTimeout(() => postJSON(`/api/settings/${place}`, { defaults: Object.fromEntries(SAVED_KEYS.filter(k => prefs[k] !== undefined).map(k => [k, prefs[k]])) })
     .then(() => status('Saved')).catch(e => status(`Save failed: ${e.message}`)), 500);
 };
-const state = { mode: prefs.mode, hillshade: prefs.hillshade, waterMode: prefs.waterMode, trip: empty };
+const state = { mode: prefs.mode, hillshade: prefs.hillshade, contours: prefs.contours, waterMode: prefs.waterMode, trip: empty };
 document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === state.mode));
-$('hillshade').checked = state.hillshade;
+$('hillshade').checked = state.hillshade; $('contours').checked = state.contours;
 // OSM labels to suppress: anything a hand label already covers (or says it replaces)
 const handNamesOf = () => labels.flatMap(l => [l.text.replace(/\n/g, ' '), ...(l.replaces ? [l.replaces] : [])]);
 let handNames = handNamesOf();
-const style = () => buildBayStyle({ osm, mask, currents, routes, aton, coastLines,
+const style = () => buildBayStyle({ lights: view.lights, osm, mask, currents, routes, aton, coastLines,
   // the water tone is tuned for the light map; on the dark one a little goes a long way
   ripples, trips: state.trip, waterMode: state.waterMode, waterShade: view.theme === 'dark' ? Math.min(prefs.waterShade, 0.15) : prefs.waterShade,
-  contourTiles: contourTiles(state.mode), mode: state.mode, designZoom, hillshade: state.hillshade, handNames, theme: view.theme,
+  contourTiles: contourTiles(state.mode), mode: state.mode, designZoom, hillshade: state.hillshade, landContours: state.contours, handNames, theme: view.theme,
   landTiles: cfg.style === 'bay-tiles' });
 
 // the editor sidebar is open by default in dev; collapsing it is a per-browser convenience
@@ -256,6 +264,7 @@ document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click'
   restyle();
   layer.setMode(state.mode);
 }));
+$('contours').addEventListener('change', (ev) => { state.contours = ev.target.checked; savePrefs({ contours: state.contours }); restyle(); });
 $('hillshade').addEventListener('change', (ev) => { state.hillshade = ev.target.checked; savePrefs({ hillshade: state.hillshade }); restyle(); });
 
 // --- water texture switch, route planner, currents
@@ -338,12 +347,16 @@ if (flowData) {
   $('flow-toggle').hidden = false;
   // streaks sit above water, ripples and coast, below piers, roads, routes, buoys and every label.
   // No frozen state: shown means moving.
-  const flowKey = 'bay-paddling:flow:v6'; // bump when DEFAULTS change (stores only the knobs you changed)
+  const flowKey = 'bay-paddling:flow:v7'; // bump when DEFAULTS change (stores only the knobs you changed)
+  // your Advanced tweaks; a streak colour is kept per map style (colour-light / colour-dark)
+  const tweaks = () => { let t = {}; try { t = JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch {}
+    const { ['colour-light']: cl, ['colour-dark']: cd, colour, ...rest } = t, c = view.theme === 'dark' ? cd : cl;
+    return c ? { ...rest, colour: c } : rest; };
   // the lab starts from a dense, dark-blue look (your own tweaks are remembered per browser)
-  const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();
+  const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();   // raw, as stored
   // the WebGL renderer (src/flow-gl.js) when the browser can do it; ?canvas forces the original one
   const GL = !Q.has('canvas') && (() => { try { const g = document.createElement('canvas').getContext('webgl2'); return !!(g && g.getExtension('EXT_color_buffer_float')); } catch { return false; } })();
-  const flow = new (GL ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', router: router?.mask ? router : null, params: { ...FLOW_PRESETS[view.currents](view.theme, GL), ...savedFlow }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
+  const flow = new (GL ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', router: router?.mask ? router : null, params: { ...FLOW_PRESETS[view.currents](view.theme, GL), ...tweaks() }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
   slider.max = flowData.times.length - 1;
   flow.setTime(flow.t);
   // Now is only useful once you've moved away from now
@@ -466,17 +479,41 @@ if (flowData) {
   // --- settings: streaks, map style, buoys (all in the page address)
   {
     const el = $('flow-strength'), key = 'bay-paddling:strength';
-    const DEF = GL ? 0.76 : 0.5;   // Greg's pick (2026-11-19): fine texture, and slow water still moves
+    const DEF = 0.5;   // Greg's pick (2026-11-19): halfway between longer and denser
     const v0 = view.streaks ?? (() => { try { return +(localStorage.getItem(key) ?? DEF); } catch { return DEF; } })();
     el.value = v0; flow.setStrength(v0);
     el.addEventListener('input', () => { flow.setStrength(+el.value); view.streaks = +el.value; writeView(); try { localStorage.setItem(key, el.value); } catch {} });
+    const lightSel = $('set-lights');
+    lightSel.value = view.lights;
+    lightSel.addEventListener('change', () => { view.lights = lightSel.value; lightsChosen = true; writeView(); restyle(); });
+    // the lights' clock: one global number the style's expressions read
+    const tick = () => { if (map.getLayer('light-glow')) map.setGlobalStateProperty('lt', performance.now() / 1000); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
     const theme = $('set-theme'), buoys = $('set-buoys');
     theme.value = view.theme; buoys.checked = view.buoys;
     // currents look + its colour for this map style (the lab keeps its own tweaks on top)
     const applyCurrents = () => flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL),
-      ...(() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })() });   // your Advanced tweaks, if any
-    theme.addEventListener('change', () => { view.theme = theme.value; document.body.classList.toggle('theme-dark', view.theme === 'dark'); writeView(); restyle(); applyCurrents(); });
-    const showBuoys = () => { for (const id of ['buoy', 'beacon', 'aton-label']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', view.buoys ? 'visible' : 'none'); };
+      ...tweaks() });   // your Advanced tweaks, if any
+    theme.addEventListener('change', () => { view.theme = theme.value;
+      if (!lightsChosen) { view.lights = lightsDefault(); $('set-lights').value = view.lights; }
+      const plain = view.theme !== 'dark';
+      if (!chosen.marks) { view.marks = plain; $('set-marks').checked = !plain; }
+      if (!chosen.labels) { view.labels = plain; $('set-labels').checked = plain; } document.body.classList.toggle('theme-dark', view.theme === 'dark'); writeView(); restyle(); applyCurrents(); });
+    // 'Lights only': the marks and their names hide; you only see a buoy when its light comes on
+    const showBuoys = () => {
+      for (const id of ['buoy', 'beacon', 'aton-label']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', view.buoys && view.marks && (id !== 'aton-label' || view.labels) ? 'visible' : 'none');
+      for (const id of ['light-glow', 'light-core']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', view.buoys ? 'visible' : 'none');
+    };
+    // 'Map labels' off: every name on the map hides (places, water, peaks, buoy names), for a quiet picture
+    const showLabels = () => {
+      for (const l of map.getStyle()?.layers || []) if (l.type === 'symbol' && l.id !== 'beacon')
+        map.setLayoutProperty(l.id, 'visibility', view.labels && (l.id !== 'aton-label' || (view.buoys && view.marks)) ? 'visible' : 'none');
+    };
+    const labelsEl = $('set-labels'); labelsEl.checked = view.labels;
+    labelsEl.addEventListener('change', () => { view.labels = labelsEl.checked; chosen.labels = true; writeView(); showLabels(); });
+    map.on('style.load', showLabels); if (map.isStyleLoaded()) showLabels();
+    const marks = $('set-marks'); marks.checked = !view.marks;
+    marks.addEventListener('change', () => { view.marks = !marks.checked; chosen.marks = true; writeView(); showBuoys(); });
     buoys.addEventListener('change', () => { view.buoys = buoys.checked; writeView(); showBuoys(); });
     map.on('style.load', showBuoys); showBuoys();
     // popover + the link it shows
@@ -535,7 +572,7 @@ if (flowData) {
   };
   render();
   const mine = { ...savedFlow };   // only the knobs changed in Advanced options, so presets (e.g. the colour per map style) still apply
-  const persist = (k) => { if (k) mine[k] = flow.p[k]; try { localStorage.setItem(flowKey, JSON.stringify(mine)); } catch {} };
+  const persist = (k) => { if (k) mine[k === 'colour' ? `colour-${view.theme}` : k] = flow.p[k]; try { localStorage.setItem(flowKey, JSON.stringify(mine)); } catch {} };
   box.addEventListener('input', (ev) => {
     if ('shade' in ev.target.dataset) {
       const v = +ev.target.value; $('tv-waterShade').textContent = v; savePrefs({ waterShade: v });

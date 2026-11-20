@@ -59,7 +59,7 @@ const UPDATE_FS = `#version 300 es
   precision highp float;
   uniform sampler2D u_state;
   uniform vec4 u_view;          // the view in metres: x0, y0, x1, y1 (where particles respawn)
-  uniform float u_step, u_compress, u_life, u_calm, u_dage;   // u_dage: age gained this frame (1 = one 30 fps frame)
+  uniform float u_step, u_compress, u_life, u_calm, u_dage, u_thin;   // u_thin: chance to respawn now (zooming out)   // u_dage: age gained this frame (1 = one 30 fps frame)
   uniform uint u_frame;
   ${CURRENT}
   ${LAND}
@@ -88,7 +88,7 @@ const UPDATE_FS = `#version 300 es
     rng = pcg(uint(gl_FragCoord.x) + pcg(uint(gl_FragCoord.y) + pcg(u_frame)));
     vec3 c = current(p.xy);
     bool outside = any(lessThan(p.xy, u_view.xy)) || any(greaterThan(p.xy, u_view.zw));
-    if (p.z > p.w || c.z < 0.5 || outside || water(p.xy) < 0.5) { o = spawn(); return; }
+    if (p.z > p.w || c.z < 0.5 || outside || water(p.xy) < 0.5 || rand() < u_thin) { o = spawn(); return; }
     // visual speed ∝ speed^compress (slow water still drifts visibly), north is −y
     float sp = length(c.xy);
     float vis = sp > 1e-4 ? 1.2 * pow(sp / 1.2, u_compress) / sp : 0.0;
@@ -315,6 +315,14 @@ export class FlowGL {
     gl.bindVertexArray(this.vao);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE);
 
+    const c = this.map.getContainer(), m0 = this.map.unproject([0, 0]), m1 = this.map.unproject([c.clientWidth, c.clientHeight]);
+    const mx = (lng) => (lng + 180) / 360, my = (lat) => { const s = Math.sin(lat * Math.PI / 180); return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
+    const rect = [mx(m0.lng), my(m0.lat), mx(m1.lng), my(m1.lat)];   // NW, SE: same orientation as the screen
+    // zooming out squeezes the streaks you had into a smaller patch of screen (r² denser): fade the old
+    // trails by that much and respawn that share of particles across the wider view, so density stays even
+    const r = this.trailRect ? (rect[2] - rect[0]) / (this.trailRect[2] - this.trailRect[0]) : 1;
+    const shrink = r > 1.0001 ? 1 / (r * r) : 1;
+
     // 2. update particles: state[0] → state[1]
     const step = this.p.speed * dt * (z > 13.5 ? Math.pow(2, -(z - 13.5) * this.p.zoomEase) : Math.pow(2, (13.5 - z) * this.p.zoomOutSpeed));
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fb);
@@ -325,16 +333,13 @@ export class FlowGL {
     this.bindCurrent(P);
     gl.uniform4fv(P.u.u_view, this.viewM);
     gl.uniform1f(P.u.u_step, step); gl.uniform1f(P.u.u_compress, this.p.compress); gl.uniform1ui(P.u.u_frame, (this.frame = ((this.frame || 0) + 1) >>> 0));
-    gl.uniform1f(P.u.u_life, this.p.life); gl.uniform1f(P.u.u_calm, this.p.calm ?? 0.3); gl.uniform1f(P.u.u_dage, 30 * dt);
+    gl.uniform1f(P.u.u_life, this.p.life); gl.uniform1f(P.u.u_calm, this.p.calm ?? 0.3); gl.uniform1f(P.u.u_dage, 30 * dt); gl.uniform1f(P.u.u_thin, 1 - shrink);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     // 3. trails: previous image, faded, at its old place → trail[1]; then this frame's segments on top
     const matrix = args.defaultProjectionData?.mainMatrix || args.modelViewProjectionMatrix;
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.trail[1], 0);
     gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    const c = this.map.getContainer(), m0 = this.map.unproject([0, 0]), m1 = this.map.unproject([c.clientWidth, c.clientHeight]);
-    const mx = (lng) => (lng + 180) / 360, my = (lat) => { const s = Math.sin(lat * Math.PI / 180); return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
-    const rect = [mx(m0.lng), my(m0.lat), mx(m1.lng), my(m1.lat)];   // NW, SE: same orientation as the screen
     if (this.trailRect) {
       P = this.quad; gl.useProgram(P.p);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.trail[0]); gl.uniform1i(P.u.u_tex, 0);
@@ -342,7 +347,7 @@ export class FlowGL {
       const still = rect.every((v, i) => Math.abs(v - this.trailRect[i]) < 1e-12);
       gl.uniformMatrix4fv(P.u.u_matrix, false, still ? IDENTITY : matrix); gl.uniform4fv(P.u.u_rect, still ? [-1, 1, 1, -1] : this.trailRect);
       // shorter tails as the knob goes denser; while the map moves, old trails fade 3× faster so their edges don't linger
-      gl.uniform1f(P.u.u_fade, Math.pow(1 - (1 - this.p.trail) * this.strengthK().tail, 30 * dt * (this.moving ? 3 : 1)));
+      gl.uniform1f(P.u.u_fade, shrink * Math.pow(1 - (1 - this.p.trail) * this.strengthK().tail, 30 * dt * (this.moving ? 3 : 1)));
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

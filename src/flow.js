@@ -33,7 +33,7 @@ export const DEFAULTS = {
 export const PRESETS = {
   fine: () => ({}),
   dense: (theme, gl = true) => ({ density: gl ? 754 : 25.5, zoomedOut: 0.2, speed: 120, trail: 0.92, width: gl ? 0.3 : 0.7, calm: 0.8,
-    ...(theme === 'dark' ? { colour: '#a9d3f0', opacity: 0.35 } : { colour: '#1f4f7a', opacity: 0.45 }) }),
+    ...(theme === 'dark' ? { colour: '#507291', opacity: 0.35 } : { colour: '#013260', opacity: 0.45 }) }),
 };
 
 export class FlowLayer {
