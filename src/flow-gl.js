@@ -270,7 +270,7 @@ export class FlowGL {
     this.mosaicM = [tx0 * tsz, ty0 * tsz, (tx1 - tx0 + 1) * tsz, (ty1 - ty0 + 1) * tsz];
     // the land mask for the view: 12 m cells when zoomed in, 48 m across the whole Bay
     const R = this.router;
-    if (R?.loaded) {
+    if (R?.loaded && R.levels[R.meta.coarse]) {   // both levels in (the coarse one can arrive a moment later)
       const lz = (x1 - x0) < 25000 ? R.meta.fine : R.meta.coarse, lcell = R.levels[lz].cell, ltsz = R.T * lcell, ln = 1 << lz;
       const lx0 = Math.max(0, Math.floor(x0 / ltsz)), ly0 = Math.max(0, Math.floor(y0 / ltsz));
       const lx1 = Math.min(ln - 1, Math.floor(x1 / ltsz)), ly1 = Math.min(ln - 1, Math.floor(y1 / ltsz));

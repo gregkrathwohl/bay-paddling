@@ -86,6 +86,7 @@ const LAB = new URLSearchParams(location.search).has('lab');
 // the viewer's settings live in the page address, so any view can be shared or used as a screensaver:
 //   ?style=dark  &buoys=0  &streaks=0.7  &rate=live|0.1|0.33|1  &play  &screensaver   (+ #zoom/lat/lng)
 const Q = new URLSearchParams(location.search);
+const TWEAK_KEYS = ['density', 'zoomedOut', 'zoomOutSpeed', 'speed', 'zoomEase', 'compress', 'trail', 'life', 'calm', 'opacity', 'width'];
 const view = {
   theme: Q.get('style') === 'dark' ? 'dark' : 'light', buoys: Q.get('buoys') !== '0', // dark starts as the quiet visualization: lights only, no labels (each follows the style until you pick it)
   marks: Q.has('marks') ? Q.get('marks') !== '0' : Q.get('style') !== 'dark', labels: Q.has('labels') ? Q.get('labels') !== '0' : Q.get('style') !== 'dark',
@@ -93,6 +94,12 @@ const view = {
   play: Q.has('play'), screensaver: Q.has('screensaver'), currents: Q.get('currents') === 'fine' ? 'fine' : 'dense',
   // experiment: buoy lights. Dark is the quiet visualization (lights on); light is the chart (just buoys).
   lights: ['flash', 'pulse', 'steady', 'off'].includes(Q.get('lights')) ? Q.get('lights') : (Q.get('style') === 'dark' ? 'flash' : 'off'),
+  unit: Q.get('unit') === 'mi' ? 'mi' : 'nm',
+  // Advanced streak knobs you changed (e.g. &trail=0.94&colour=507291) and the water tone; nothing is
+  // remembered by the browser, so a plain reload is always the defaults and a link carries the exact look
+  tweaks: Object.fromEntries([...TWEAK_KEYS.filter(k => Q.has(k) && Number.isFinite(+Q.get(k))).map(k => [k, +Q.get(k)]),
+    ...(/^[0-9a-f]{6}$/i.test(Q.get('colour') || '') ? [['colour', `#${Q.get('colour')}`]] : [])]),
+  shade: Q.has('shade') && Number.isFinite(+Q.get('shade')) ? +Q.get('shade') : null,
 };
 const lightsDefault = () => (view.theme === 'dark' ? 'flash' : 'off');
 let lightsChosen = Q.has('lights');   // until picked, the lights follow the map style
@@ -104,6 +111,8 @@ const writeView = () => {
   chosen.marks && view.marks !== plain ? q.set('marks', view.marks ? '1' : '0') : q.delete('marks');
   chosen.labels && view.labels !== plain ? q.set('labels', view.labels ? '1' : '0') : q.delete('labels'); set('rate', view.rate, '0.33');
   set('streaks', view.streaks == null ? null : String(view.streaks)); set('lights', view.lights, lightsDefault());
+  set('unit', view.unit, 'nm'); set('shade', view.shade == null ? null : String(view.shade));
+  for (const k of [...TWEAK_KEYS, 'colour']) set(k, view.tweaks[k] == null ? null : k === 'colour' ? view.tweaks[k].slice(1) : String(view.tweaks[k]));
   view.play ? q.set('play', '') : q.delete('play');
   view.screensaver ? q.set('screensaver', '') : q.delete('screensaver');
   history.replaceState(history.state, '', `${location.pathname}?${q.toString().replace(/=(&|$)/g, '$1')}${location.hash}`);
@@ -129,6 +138,7 @@ const savePrefs = (patch) => {
   saveT = setTimeout(() => postJSON(`/api/settings/${place}`, { defaults: Object.fromEntries(SAVED_KEYS.filter(k => prefs[k] !== undefined).map(k => [k, prefs[k]])) })
     .then(() => status('Saved')).catch(e => status(`Save failed: ${e.message}`)), 500);
 };
+if (view.shade != null) prefs.waterShade = view.shade;
 const state = { mode: prefs.mode, hillshade: prefs.hillshade, contours: prefs.contours, waterMode: prefs.waterMode, trip: empty };
 document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === state.mode));
 $('hillshade').checked = state.hillshade; $('contours').checked = state.contours;
@@ -281,10 +291,10 @@ waterSel.addEventListener('change', () => { state.waterMode = waterSel.value; sa
 // --- routes card: "Create a route" → click stops, see the route and its full length
 const showTrip = (t) => { state.trip = t.geojson; map.getSource('trips')?.setData(t.geojson); };
 const timeFor = (nm) => { const m = Math.round((nm / 3) * 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
-// distance unit: nautical miles by default (the water standard); your choice is remembered, even on the public site
-let unit = (() => { try { return localStorage.getItem('bay-paddling:unit') || 'nm'; } catch { return 'nm'; } })();
+// distance unit: nautical miles by default (the water standard); another choice goes in the address
+let unit = view.unit;
 document.querySelectorAll('[data-unit]').forEach(b => b.addEventListener('click', () => {
-  unit = b.dataset.unit; try { localStorage.setItem('bay-paddling:unit', unit); } catch {} refresh();
+  unit = view.unit = b.dataset.unit; writeView(); refresh();
 }));
 let sel = null;              // 'plan' while creating a route
 let plan = [];
@@ -347,13 +357,8 @@ if (flowData) {
   $('flow-toggle').hidden = false;
   // streaks sit above water, ripples and coast, below piers, roads, routes, buoys and every label.
   // No frozen state: shown means moving.
-  const flowKey = 'bay-paddling:flow:v7'; // bump when DEFAULTS change (stores only the knobs you changed)
-  // your Advanced tweaks; a streak colour is kept per map style (colour-light / colour-dark)
-  const tweaks = () => { let t = {}; try { t = JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch {}
-    const { ['colour-light']: cl, ['colour-dark']: cd, colour, ...rest } = t, c = view.theme === 'dark' ? cd : cl;
-    return c ? { ...rest, colour: c } : rest; };
-  // the lab starts from a dense, dark-blue look (your own tweaks are remembered per browser)
-  const savedFlow = (() => { try { return JSON.parse(localStorage.getItem(flowKey) || '{}'); } catch { return {}; } })();   // raw, as stored
+  // your Advanced tweaks, from the page address (view.tweaks)
+  const tweaks = () => view.tweaks;
   // the WebGL renderer (src/flow-gl.js) when the browser can do it; ?canvas forces the original one
   const GL = !Q.has('canvas') && (() => { try { const g = document.createElement('canvas').getContext('webgl2'); return !!(g && g.getExtension('EXT_color_buffer_float')); } catch { return false; } })();
   const flow = new (GL ? FlowGL : FlowLayer)(map, flowData, { beforeId: 'road', router: router?.mask ? router : null, params: { ...FLOW_PRESETS[view.currents](view.theme, GL), ...tweaks() }, isWater: router ? (lng, lat) => router.isWater(lng, lat) : null, onTime: (t) => { slider.value = t; label.innerHTML = timeLabel(flowData, t); } });
@@ -478,11 +483,11 @@ if (flowData) {
   }
   // --- settings: streaks, map style, buoys (all in the page address)
   {
-    const el = $('flow-strength'), key = 'bay-paddling:strength';
+    const el = $('flow-strength');
     const DEF = 0.5;   // Greg's pick (2026-11-19): halfway between longer and denser
-    const v0 = view.streaks ?? (() => { try { return +(localStorage.getItem(key) ?? DEF); } catch { return DEF; } })();
+    const v0 = view.streaks ?? DEF;
     el.value = v0; flow.setStrength(v0);
-    el.addEventListener('input', () => { flow.setStrength(+el.value); view.streaks = +el.value; writeView(); try { localStorage.setItem(key, el.value); } catch {} });
+    el.addEventListener('input', () => { flow.setStrength(+el.value); view.streaks = +el.value === DEF ? null : +el.value; writeView(); });
     const lightSel = $('set-lights');
     lightSel.value = view.lights;
     lightSel.addEventListener('change', () => { view.lights = lightSel.value; lightsChosen = true; writeView(); restyle(); });
@@ -495,6 +500,7 @@ if (flowData) {
     const applyCurrents = () => flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL),
       ...tweaks() });   // your Advanced tweaks, if any
     theme.addEventListener('change', () => { view.theme = theme.value;
+      delete view.tweaks.colour;   // each style has its own streak colour
       if (!lightsChosen) { view.lights = lightsDefault(); $('set-lights').value = view.lights; }
       const plain = view.theme !== 'dark';
       if (!chosen.marks) { view.marks = plain; $('set-marks').checked = !plain; }
@@ -571,11 +577,11 @@ if (flowData) {
       `<label class="row">Streak colour <input type="color" data-colour value="${flow.p.colour || '#ffffff'}"></label>`;
   };
   render();
-  const mine = { ...savedFlow };   // only the knobs changed in Advanced options, so presets (e.g. the colour per map style) still apply
-  const persist = (k) => { if (k) mine[k === 'colour' ? `colour-${view.theme}` : k] = flow.p[k]; try { localStorage.setItem(flowKey, JSON.stringify(mine)); } catch {} };
+  // only the knobs you change go in the address, so presets (e.g. the colour per map style) still apply
+  const persist = (k) => { view.tweaks[k] = flow.p[k]; writeView(); };
   box.addEventListener('input', (ev) => {
     if ('shade' in ev.target.dataset) {
-      const v = +ev.target.value; $('tv-waterShade').textContent = v; savePrefs({ waterShade: v });
+      const v = +ev.target.value; $('tv-waterShade').textContent = v; savePrefs({ waterShade: v }); view.shade = v; writeView();
       if (map.getLayer('water-shade')) map.setPaintProperty('water-shade', 'fill-opacity', v);
       return;
     }
@@ -585,7 +591,7 @@ if (flowData) {
   });
   $('flow-tune').addEventListener('click', () => { $('tuner').hidden = !$('tuner').hidden; });
   $('tuner-reset').addEventListener('click', () => {
-    flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL) }); for (const k in mine) delete mine[k]; try { localStorage.removeItem(flowKey); } catch {}
+    flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL) }); view.tweaks = {}; view.shade = null; writeView();
     const shade = cfg.defaults?.waterShade ?? 0; savePrefs({ waterShade: shade });
     if (map.getLayer('water-shade')) map.setPaintProperty('water-shade', 'fill-opacity', shade);
     render();
