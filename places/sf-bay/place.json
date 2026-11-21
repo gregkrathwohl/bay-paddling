@@ -1,59 +1,63 @@
 {
-  "name": "San Francisco Bay",
-  "title": "San Francisco Bay",
-  "subtitle": "Paddling Guide",
-  "org": "Tidal currents \u00b7 NOAA SFBOFS",
-  "style": "bay-tiles",
-  "bbox": [
-    -122.66,
-    37.42,
-    -121.96,
-    38.16
-  ],
-  "center": [
-    -122.36,
-    37.8
-  ],
-  "zoom": 10.4,
-  "areas": [],
-  "currents": {
-    "cell": 50,
-    "max": 4
-  },
-  "tides": {
-    "station": "9414290",
-    "name": "San Francisco (Golden Gate)"
-  },
-  "defaults": {
-    "mode": "web",
-    "currents": true,
-    "waterShade": 0.42,
-    "hillshade": true,
-    "waterMode": "ripples",
-    "colour": false
-  },
-  "navgrid": {
-    "seeds": [
-      [
-        -122.6,
-        37.7
-      ],
-      [
-        -122.4,
-        37.84
-      ],
-      [
-        -122.2,
-        37.6
-      ],
-      [
-        -122.4,
-        38.05
-      ],
-      [
-        -122.05,
-        38.075
-      ]
-    ]
-  }
+ "name": "San Francisco Bay",
+ "title": "San Francisco Bay Currents",
+ "subtitle": "",
+ "org": "Live tidal currents · NOAA forecast",
+ "style": "bay-tiles",
+ "bbox": [
+  -122.66,
+  37.42,
+  -121.96,
+  38.16
+ ],
+ "center": [
+  -122.36,
+  37.8
+ ],
+ "zoom": 10.4,
+ "areas": [],
+ "currents": {
+  "cell": 50,
+  "max": 4
+ },
+ "tides": {
+  "station": "9414290",
+  "name": "San Francisco (Golden Gate)"
+ },
+ "defaults": {
+  "mode": "web",
+  "currents": true,
+  "waterShade": 0.42,
+  "hillshade": true,
+  "waterMode": "ripples",
+  "colour": false
+ },
+ "navgrid": {
+  "seeds": [
+   [
+    -122.6,
+    37.7
+   ],
+   [
+    -122.4,
+    37.84
+   ],
+   [
+    -122.2,
+    37.6
+   ],
+   [
+    -122.4,
+    38.05
+   ],
+   [
+    -122.05,
+    38.075
+   ]
+  ]
+ },
+ "routes": false,
+ "legend": false,
+ "titleStyle": "caption",
+ "editor": false
 }

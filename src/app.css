@@ -15,6 +15,15 @@ html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink
 .title-panel .org { font-family: var(--serif); color: var(--accent); font-weight: 600; font-size: 13px; text-align: center; }
 .title-panel h1 { font-family: var(--serif); font-weight: 600; font-size: 34px; white-space: nowrap; line-height: 1; margin: 8px 0 2px; text-align: center; text-transform: uppercase; letter-spacing: 0.02em; }
 .title-panel .subtitle { font-family: var(--serif); color: var(--accent); font-size: 22px; text-transform: uppercase; letter-spacing: 0.08em; text-align: center; padding-bottom: 10px; border-bottom: 1px solid #d8cfc6; }
+/* "caption" title (place.json titleStyle): no panel, just a quiet name over the water, like a screensaver caption */
+.title-panel.caption { background: none; border: 0; outline: 0; padding: 0; top: 22px; left: 26px; min-width: 0;
+  display: flex; flex-direction: column; pointer-events: none; text-shadow: 0 0 10px rgba(251,250,246,0.7), 0 0 3px rgba(251,250,246,0.6); }
+.title-panel.caption h1 { order: 0; margin: 0; font-size: 34px; font-weight: 600; text-align: left; letter-spacing: 0.05em; color: #1f2a33; }
+.title-panel.caption .org { order: 1; margin-top: 6px; text-align: left; font: 500 15px/1.3 var(--sans); color: #45525c; letter-spacing: 0.02em; }
+.title-panel.caption .subtitle, .title-panel.caption .areas { display: none; }
+body.theme-dark .title-panel.caption { filter: none; text-shadow: 0 0 10px rgba(0,0,0,0.6), 0 0 3px rgba(0,0,0,0.6); }
+body.theme-dark .title-panel.caption h1 { color: #e3e9ee; }
+body.theme-dark .title-panel.caption .org { color: #aab6bf; }
 .areas { margin: 10px 0 0; padding-left: 22px; font-size: 13px; line-height: 1.55; }
 
 .key { bottom: 34px; left: 18px; width: 250px; padding: 10px 14px 10px; font-size: 12px; }
@@ -308,6 +317,16 @@ body.screensaver { cursor: none; }
 body.screensaver .ss-caption { display: block; position: absolute; left: 32px; bottom: 28px; z-index: 3; font: 17px/1.4 var(--sans);
   color: #1f2a33; text-shadow: 0 0 2px rgba(255,255,255,0.9), 0 0 1px rgba(255,255,255,0.9); pointer-events: none; }
 .ss-caption b { font: 600 24px/1.25 var(--sans); display: block; }
+/* caption maps (place.json titleStyle "caption"): the time and tide also sit bottom-left in the normal view, smaller,
+   when there's room beside the tide panel */
+@media (min-width: 1100px) {
+  body.caption-time:not(.screensaver) .ss-caption { display: block; position: absolute; left: 26px; bottom: 26px; z-index: 2; font: 16px/1.4 var(--sans);
+    color: #1f2a33; text-shadow: 0 0 10px rgba(251,250,246,0.7), 0 0 3px rgba(251,250,246,0.6); pointer-events: none; }
+  body.caption-time:not(.screensaver) .ss-caption b { font-size: 24px; }
+  body.caption-time:not(.screensaver) .ss-caption small { font-size: 16px; }
+  body.caption-time:not(.screensaver) .ss-caption .ss-src { display: none; }
+  body.theme-dark.caption-time .ss-caption { color: #e3e9ee; text-shadow: 0 0 10px rgba(0,0,0,0.6), 0 0 3px rgba(0,0,0,0.6); }
+}
 .ss-caption small { font-size: 17px; }
 
 /* dark map: the floating panels follow */

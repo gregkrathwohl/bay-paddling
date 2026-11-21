@@ -38,7 +38,10 @@ document.querySelector('.key').innerHTML = `
   <div class="k"><i class="sw fill beach"></i>Beach</div>
   <div class="k"><i class="sw fill os"></i>Park land</div>
   <p class="src">Data: OpenStreetMap, NOAA ENC (buoys &amp; beacons), OpenFreeMap, AWS Terrain Tiles bathymetry. Not for navigation.</p>`;
-document.title = `${cfg.name} ${cfg.subtitle}`;
+document.title = cfg.subtitle ? `${cfg.name} ${cfg.subtitle}` : (cfg.title || cfg.name);
+if (cfg.titleStyle === 'caption') { document.querySelector('.title-panel').classList.add('caption'); document.body.classList.add('caption-time'); }
+// currents-only maps (place.json legend: false) have no legend; the data credit moves to the attribution
+if (cfg.legend === false) document.querySelector('.key').remove();
 document.getElementById('title').textContent = cfg.title || cfg.name;
 // the title on one line: the panel is as wide as it needs, up to the screen
 {
@@ -49,13 +52,13 @@ document.getElementById('title').textContent = cfg.title || cfg.name;
     let size = parseFloat(getComputedStyle(h1).fontSize);
     while (h1.scrollWidth > box.clientWidth - 36 && size > 18) h1.style.fontSize = `${--size}px`;
   };
-  fit(); document.fonts?.ready.then(fit); // again once EB Garamond has loaded
+  if (cfg.titleStyle !== 'caption') { fit(); document.fonts?.ready.then(fit); }   // a caption has no panel to fit // again once EB Garamond has loaded
 }
-document.getElementById('subtitle').textContent = cfg.subtitle || 'Trails Guide';
+document.getElementById('subtitle').textContent = cfg.subtitle ?? 'Trails Guide';
 document.getElementById('org').textContent = cfg.org || '';
 document.getElementById('areas').innerHTML = (cfg.areas || []).map(a => `<li>${a}</li>`).join('');
 document.querySelector('.title-panel').classList.add('ready');
-document.querySelector('.key').classList.add('ready');
+document.querySelector('.key')?.classList.add('ready');
 
 const names = cfg.boundaries || [cfg.name];
 const boundaries = osm.features.filter(f => f.properties.boundary && names.includes(f.properties.name));
@@ -122,6 +125,8 @@ if (view.screensaver) document.body.classList.add('screensaver');
 document.body.classList.toggle('theme-dark', view.theme === 'dark');
 if (PREVIEW) document.body.setAttribute('data-public', '');
 if (view.screensaver) document.body.setAttribute('data-public', '');
+// a finished map (place.json editor: false) looks the same locally as live; add ?edit to the address for the dev tools
+if (cfg.editor === false && !new URLSearchParams(location.search).has('edit')) document.body.setAttribute('data-public', '');
 const PUBLIC = document.body.hasAttribute('data-public');
 const EDITOR = !PUBLIC;
 const SAVED_KEYS = ['mode', 'hillshade', 'contours', 'waterMode', 'waterShade', 'currents'];
@@ -170,7 +175,8 @@ map.on('styleimagemissing', () => {}); // images are added below
 map.on('style.load', () => addImages(map));
 map.addControl(new maplibregl.ScaleControl({ unit: 'imperial', maxWidth: 160 }), 'bottom-right');
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'bottom-right');
-map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: '© OpenStreetMap contributors' }));
+map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: cfg.legend === false
+  ? 'Currents: NOAA SFBOFS · © OpenStreetMap contributors, OpenFreeMap · Not for navigation' : '© OpenStreetMap contributors' }));
 // start the attribution collapsed to its ⓘ button (MapLibre opens it on wide screens)
 const collapseAttrib = () => document.querySelectorAll('.maplibregl-ctrl-attrib').forEach(el => { el.classList.remove('maplibregl-compact-show'); el.removeAttribute('open'); });
 map.once('load', collapseAttrib); map.once('idle', collapseAttrib);   // again once the tile sources have added their credits
@@ -300,7 +306,7 @@ let sel = null;              // 'plan' while creating a route
 let plan = [];
 const planning = () => sel === 'plan';
 const refresh = () => {
-  card.hidden = !router;   // no routing grid for this area (yet)
+  card.hidden = !router || cfg.routes === false;   // no routing grid for this area (yet), or a currents-only map
   $('rt-idle').hidden = planning(); $('rt-plan').hidden = !planning();
   document.body.classList.toggle('planning', planning());
   if (!planning()) { showTrip({ geojson: empty }); return; }
@@ -589,7 +595,6 @@ if (flowData) {
     const k = ev.target.dataset.k; if (!k) return;
     const v = +ev.target.value; $(`tv-${k}`).textContent = v; flow.setParams({ [k]: v }); persist(k);
   });
-  $('flow-tune').addEventListener('click', () => { $('tuner').hidden = !$('tuner').hidden; });
   $('tuner-reset').addEventListener('click', () => {
     flow.setParams({ ...FLOW_DEFAULTS, ...FLOW_PRESETS[view.currents](view.theme, GL) }); view.tweaks = {}; view.shade = null; writeView();
     const shade = cfg.defaults?.waterShade ?? 0; savePrefs({ waterShade: shade });
